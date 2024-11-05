@@ -91,5 +91,5 @@ export function computeShaderSrc(degree, cpsWidth, cpsHeight, uResultLength, tem
             output[index] = vTempCps[degree].x;
             output[index + 31] = vTempCps[degree].y;
         }
-    `
+    `;
 }
