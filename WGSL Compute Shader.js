@@ -1,4 +1,4 @@
-// compute_shader.js
+// compute_shader
 export function computeShaderSrc(degree, cpsWidth, cpsHeight, uResultLength, tempWidth)
 {
     return /* wgsl */`
