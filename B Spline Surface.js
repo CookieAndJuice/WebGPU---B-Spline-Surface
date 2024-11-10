@@ -30,14 +30,14 @@ async function main() {
     // basic setting
     const cpsWidth = 10;
     const cpsHeight = 10;
-    const interval = screenHeight / 5;
+    const diff = screenHeight / 5;
 
-    const minW = parseInt(screenWidth / 2 - (interval * 3 / 2));
-    const maxW = minW + interval * 3;
-    const minH = parseInt(screenHeight / 2 - (interval * 3 / 2));
-    const maxH = minH + interval * 3;
+    const minW = parseInt(screenWidth / 2 - (diff * 3 / 2));
+    const maxW = minW + diff * 3;
+    const minH = parseInt(screenHeight / 2 - (diff * 3 / 2));
+    const maxH = minH + diff * 3;
     
-    const h = interval * 3 / (cpsWidth - 1);
+    const h = diff * 3 / (cpsWidth - 1);
 
     // control points
     const cps_size = cpsWidth * cpsHeight * 2 * 4;      // cps numbers * vec2 * 4bytes
@@ -68,13 +68,42 @@ async function main() {
     const domainNum = end - start + 1;          // domain knots number
     
     // draw points
+    const dTheta = 12;
+    const drawPointsNum = 360 / dTheta;
+    const uDrawArray = [];
+    const vDrawArray = [];
+    let theta = 0;
     
-    const uDrawTypedArray = new Float32Array();
-    const vDrawTypedArray = new Float32Array();
+    for (let i = 0; i < drawPointsNum; ++i)
+    {
+        theta = i * dTheta;
+        
+        uDrawArray[i] = Number(500 + 400 * Math.cos(theta * Math.PI / 180)) / 1000 * (domainNum - 1) + start;
+        vDrawArray[i] = Number(500 + 400 * Math.sin(theta * Math.PI / 180)) / 1000 * (domainNum - 1) + start;
+    }
+    const uDrawTypedArray = new Float32Array(uDrawArray);
+    const vDrawTypedArray = new Float32Array(vDrawArray);
     
     // interval TypedArrays
-    const uIntervalTypedArray = new Uint32Array();
-    const vIntervalTypedArray = new Uint32Array();
+    const uIntervalArray = [];
+    const vIntervalArray = [];
+    let interval = 0;
+    for (let i = 0; i < drawPointsNum; ++i)
+    {
+        if (uDrawArray[i] == knotArray[end])
+            interval = end - 1;
+        else
+            interval = findInterval(knotArray, uDrawArray[i]);
+        uIntervalArray[i] = interval;
+        
+        if (vDrawArray[i] == knotArray[end])
+            interval = end - 1;
+        else
+            interval = findInterval(knotArray, vDrawArray[i]);
+        vIntervalArray[i] = interval;
+    }
+    const uIntervalTypedArray = new Uint32Array(uIntervalArray);
+    const vIntervalTypedArray = new Uint32Array(vIntervalArray);
     
     // uResult & tempCps size
     const uResultLength = uDrawTypedArray.length * cpsHeight;
