@@ -16,7 +16,7 @@ function findInterval(knotList, point) {
 
 async function main() {  
     const adapter = await navigator.gpu?.requestAdapter();
-    const device = await device?.requestDevice();
+    const device = await adapter?.requestDevice();
     if (!device)
     {
         fail('need a browser that supports Webgpu');
@@ -119,53 +119,86 @@ async function main() {
     // pipeline
     const computePipeline = device.createComputePipeline({
         label: 'B Spline Surface Compute Pipeline',
-        layout: auto,
+        layout: 'auto',
         compute: {
             computeShaderModule,
         },
     });
 
     // buffers
-    const uInputs = device.createBuffer({
+    const uInputsBuffer = device.createBuffer({
         label: 'uInputs buffer',
-        size: 1,
+        size: drawPointsNum * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
+    device.queue.writeBuffer(uInputsBuffer, 0, uDrawTypedArray);
 
-    const vInputs = device.createBuffer({
+    const vInputsBuffer = device.createBuffer({
         label: 'vInputs buffer',
-        size: 1,
+        size: drawPointsNum * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
+    device.queue.writeBuffer(vInputsBuffer, 0, vDrawTypedArray);
 
-    const control_points = device.createBuffer({
+    const controlPointsBuffer = device.createBuffer({
         label: 'control_points buffer',
-        size: 1,
+        size: cps_size,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
+    device.queue.writeBuffer(controlPointsBuffer, 0, cpsTypedArray);
 
-    const knots = device.createBuffer({
+    const knotsBuffer = device.createBuffer({
         label: 'knots buffer',
-        size: 1,
+        size: knotNumbers * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
+    device.queue.writeBuffer(knotsBuffer, 0, knotTypedArray);
 
-    const uIntervals = device.createBuffer({
+    const uIntervalsBuffer = device.createBuffer({
         label: 'uIntervals buffer',
-        size: 1,
+        size: drawPointsNum * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
+    device.queue.writeBuffer(uIntervalsBuffer, 0, uIntervalTypedArray);
 
-    const vIntervals = device.createBuffer({
+    const vIntervalsBuffer = device.createBuffer({
         label: 'vIntervals buffer',
-        size: 1,
+        size: drawPointsNum * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
+    device.queue.writeBuffer(vIntervalsBuffer, 0, vIntervalTypedArray);
 
-    const output = device.createBuffer({
+    const outputBuffer = device.createBuffer({
         label: 'output buffer',
-        size: 1,
+        size: drawPointsNum * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
+
+    const computeBindGroup = device.createBindGroup({
+        layout: computePipeline.getBindGroupLayout(0),
+        entries: [
+            { binding: 0, resource: { buffer: uInputsBuffer } },
+            { binding: 1, resource: { buffer: vInputsBuffer } },
+            { binding: 2, resource: { buffer: controlPointsBuffer } },
+            { binding: 3, resource: { buffer: knotsBuffer } },
+            { binding: 4, resource: { buffer: uIntervalsBuffer } },
+            { binding: 5, resource: { buffer: vIntervalsBuffer } },
+            { binding: 6, resource: { buffer: outputBuffer } },
+        ]
+    });
+
+    const computeEncoder = device.createCommandEncoder({ label: "compute encoder"});
+    const computePass = computeEncoder.beginComputepass({ label: "compute pass" } );
+
+    computePass.setPipeline(computePipeline);
+    computePass.setBindGroup(0, computeBindGroup);
+    computePass.dispatchWorkgroups(31);
+    computePass.end();
+
+    const commandBuffer = computeEncoder.finish();
+    device.queue.submit([commandBuffer]);
 }
 main();
+
+// Uncaught (in promise) TypeError: Failed to execute 'createComputePipeline' on 'GPUDevice': Failed to read the 'compute' property from 'GPUComputePipelineDescriptor': Failed to read the 'module' property from 'GPUProgrammableStage': Required member is undefined.
+// at main (B Spline Surface.js:120:36)
