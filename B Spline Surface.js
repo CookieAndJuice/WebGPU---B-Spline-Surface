@@ -40,15 +40,15 @@ async function main() {
     const h = diff * 3 / (cpsWidth - 1);
 
     // control points
-    const cps_size = cpsWidth * cpsHeight * 2 * 4;      // cps numbers * vec2 * 4bytes
-    const cpsTypedArray = new Int32Array(cps_size);
+    const cpsArray = [];
     for (let v = 0; v < cpsHeight; ++v)
     {
         for (let u = 0; u < cpsWidth; ++u)
         {
-            cpsTypedArray.set([minW + u * h, minH + v * h]);
+            cpsArray[v * cpsWidth + u] = [minW + u * h, minH + v * h];
         }
     }
+    const cpsTypedArray = new Int32Array(cpsArray);
     
     // degree
     const degree = 3;
@@ -117,64 +117,67 @@ async function main() {
     });
 
     // pipeline
+    // 튜토리얼에서는 파이프라인에 compute: { module, } 프로퍼티를 넣었는데, 여기의 module이 변수명이 아니라 프로퍼티 명이었다... 어쩐지 module 대신 computeShaderModule을 넣으면 오류나더라....
     const computePipeline = device.createComputePipeline({
         label: 'B Spline Surface Compute Pipeline',
         layout: 'auto',
         compute: {
-            computeShaderModule,
+            module: computeShaderModule,
         },
     });
 
     // buffers
+    // writeBuffer를 통해 데이터를 넣는 행위에도 usage: COPY_DST가 필요하다.
     const uInputsBuffer = device.createBuffer({
         label: 'uInputs buffer',
         size: drawPointsNum * 4,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
     device.queue.writeBuffer(uInputsBuffer, 0, uDrawTypedArray);
 
     const vInputsBuffer = device.createBuffer({
         label: 'vInputs buffer',
         size: drawPointsNum * 4,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
     device.queue.writeBuffer(vInputsBuffer, 0, vDrawTypedArray);
 
     const controlPointsBuffer = device.createBuffer({
         label: 'control_points buffer',
-        size: cps_size,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+        size: cpsHeight * cpsWidth * 2 * 4,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
     device.queue.writeBuffer(controlPointsBuffer, 0, cpsTypedArray);
 
     const knotsBuffer = device.createBuffer({
         label: 'knots buffer',
         size: knotNumbers * 4,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
     device.queue.writeBuffer(knotsBuffer, 0, knotTypedArray);
 
     const uIntervalsBuffer = device.createBuffer({
         label: 'uIntervals buffer',
         size: drawPointsNum * 4,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
     device.queue.writeBuffer(uIntervalsBuffer, 0, uIntervalTypedArray);
 
     const vIntervalsBuffer = device.createBuffer({
         label: 'vIntervals buffer',
         size: drawPointsNum * 4,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
     device.queue.writeBuffer(vIntervalsBuffer, 0, vIntervalTypedArray);
 
     const outputBuffer = device.createBuffer({
         label: 'output buffer',
-        size: drawPointsNum * 4,
+        size: drawPointsNum * 4 * 2,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
 
     const computeBindGroup = device.createBindGroup({
+        label: 'bindGroup for compute shader',
         layout: computePipeline.getBindGroupLayout(0),
         entries: [
             { binding: 0, resource: { buffer: uInputsBuffer } },
@@ -187,18 +190,15 @@ async function main() {
         ]
     });
 
-    const computeEncoder = device.createCommandEncoder({ label: "compute encoder"});
-    const computePass = computeEncoder.beginComputepass({ label: "compute pass" } );
+    const computeEncoder = device.createCommandEncoder({ label: "compute encoder" });
+    const computePass = computeEncoder.beginComputePass({ label: "compute pass" } );
 
     computePass.setPipeline(computePipeline);
     computePass.setBindGroup(0, computeBindGroup);
-    computePass.dispatchWorkgroups(31);
+    computePass.dispatchWorkgroups(1);
     computePass.end();
 
     const commandBuffer = computeEncoder.finish();
     device.queue.submit([commandBuffer]);
 }
 main();
-
-// Uncaught (in promise) TypeError: Failed to execute 'createComputePipeline' on 'GPUDevice': Failed to read the 'compute' property from 'GPUComputePipelineDescriptor': Failed to read the 'module' property from 'GPUProgrammableStage': Required member is undefined.
-// at main (B Spline Surface.js:120:36)
