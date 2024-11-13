@@ -1,10 +1,20 @@
 // Vertex Shader & Fragment Shader
 export function vertexShaderSrc()
 {
-    return /*wgsl*/``;
+    return /*wgsl*/`
+        @vertex fn vs()
+        {
+
+        }
+    `;
 }
 
 export function fragmentShaderSrc()
 {
-    return /*wgsl*/``;
+    return /*wgsl*/`
+        @fragment fn fs()
+        {
+            
+        }
+    `;
 }

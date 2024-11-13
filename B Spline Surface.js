@@ -22,6 +22,14 @@ async function main() {
         fail('need a browser that supports Webgpu');
         return;
     }
+
+    const canvas = document.querySelector('canvas');
+    const context = canvas.getContext('webgpu');
+    const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
+    context.configure({
+        device,
+        format: presentationFormat,
+    });
     
     // screen setting
     const screenWidth = 2560;
@@ -111,6 +119,16 @@ async function main() {
     const tempWidth = degree + 1;
     
     // shader
+    const vertexShaderModule = device.createShaderModule({
+        label: 'B Spline Surface Vertex Module',
+        code: vertexShaderSrc(),
+    });
+
+    const fragmentShaderModule = device.createShaderModule({
+        label: 'B Spline Surface Fragment Module',
+        code: fragmentShaderSrc(),
+    });
+
     const computeShaderModule = device.createShaderModule({
         label: 'B Spline Surface Compute Module',
         code: computeShaderSrc(degree, cpsWidth, cpsHeight, uResultLength, tempWidth),
@@ -118,6 +136,17 @@ async function main() {
 
     // pipeline
     // 튜토리얼에서는 파이프라인에 compute: { module, } 프로퍼티를 넣었는데, 여기의 module이 변수명이 아니라 프로퍼티 명이었다... 어쩐지 module 대신 computeShaderModule을 넣으면 오류나더라....
+    const renderPipeline = device.createRenderPipeline({
+        label: 'B Spline Surface Render Pipeline',
+        layout: 'auto',
+        vertex: {
+            module: vertexShaderModule,
+        },
+        fragment: {
+            module: fragmentShaderModule,
+        },
+    });
+
     const computePipeline = device.createComputePipeline({
         label: 'B Spline Surface Compute Pipeline',
         layout: 'auto',
@@ -125,6 +154,18 @@ async function main() {
             module: computeShaderModule,
         },
     });
+
+    // RenderPassDescriptor
+    const renderPassDescriptor = {
+        label: 'canvas renderpass',
+        colorAttachments: [
+            {
+                clearValue: [0.3, 0.3, 0.3, 1],
+                loadOp: 'clear',
+                storeOp: 'store',
+            },
+        ],
+    };
 
     // buffers
     // writeBuffer를 통해 데이터를 넣는 행위에도 usage: COPY_DST가 필요하다.
@@ -190,15 +231,26 @@ async function main() {
         ]
     });
 
-    const computeEncoder = device.createCommandEncoder({ label: "compute encoder" });
-    const computePass = computeEncoder.beginComputePass({ label: "compute pass" } );
+    function render() {
+        const encoder = device.createCommandEncoder({ label: "compute encoder" });
+        const computePass = encoder.beginComputePass({ label: "compute pass" } );
 
-    computePass.setPipeline(computePipeline);
-    computePass.setBindGroup(0, computeBindGroup);
-    computePass.dispatchWorkgroups(1);
-    computePass.end();
+        renderPassDescriptor.colorAttachments[0].view = context.getCurrentTexture().createView();
+        const renderPass = encoder.beginRenderPass(renderPassDescriptor);
 
-    const commandBuffer = computeEncoder.finish();
-    device.queue.submit([commandBuffer]);
+        computePass.setPipeline(computePipeline);
+        computePass.setBindGroup(0, computeBindGroup);
+        computePass.dispatchWorkgroups(1);
+        computePass.end();
+
+        renderPass.setPipeline(renderPipeline);
+        renderPass.draw(1);
+        renderPass.end();
+
+        const commandBuffer = encoder.finish();
+        device.queue.submit([commandBuffer]);
+    }
+
+    render();
 }
 main();
