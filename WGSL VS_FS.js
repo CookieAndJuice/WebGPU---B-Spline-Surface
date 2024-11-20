@@ -4,19 +4,26 @@ export function vertexShaderSrc()
     return /*wgsl*/`
         struct Vertex {
             @location(0) position: vec2f,
-            @location(1) size: f32,
         };
+
+        struct Uniforms {
+            vertexSize: f32,
+            resolution: vec2f,
+        }
 
         struct VSOutput {
             @builtin(position) position: vec4f,
         };
 
-        @vertex fn vs() -> VSOutput
+        @group(0) @binding(0) var<uniform> unif: Uniforms;
+
+        @vertex fn vs(
+            vert: Vertex,
+            @builtin(vertex_index) vIndex: u32,
+        ) -> VSOutput
         {
-
-
             var vsOut: VSOutput;
-
+            vsOut.position = vec4f(vert.position + unif.size / unif.resolution, 0, 1);
 
             return vsOut;
         }

@@ -141,9 +141,19 @@ async function main() {
         layout: 'auto',
         vertex: {
             module: vertexShaderModule,
+            buffers: [
+                {
+                    arrayStride: (2 + 1) * 4,
+                    stepMode: 'instance',
+                    attributes: [
+                        { shaderLocation: 0, offset: 0, format: 'float32x2' },  // position
+                    ]
+                }
+            ]
         },
         fragment: {
             module: fragmentShaderModule,
+            target: [{ format: presentationFormat }],
         },
     });
 
