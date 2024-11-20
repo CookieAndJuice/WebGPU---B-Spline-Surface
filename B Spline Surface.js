@@ -31,11 +31,11 @@ async function main() {
         format: presentationFormat,
     });
     
-    // screen setting
+    // Screen Setting
     const screenWidth = 2560;
     const screenHeight = 1440;
 
-    // basic setting
+    // Basic Setting
     const cpsWidth = 10;
     const cpsHeight = 10;
     const diff = screenHeight / 5;
@@ -46,79 +46,8 @@ async function main() {
     const maxH = minH + diff * 3;
     
     const h = diff * 3 / (cpsWidth - 1);
-
-    // control points
-    const cpsArray = [];
-    for (let v = 0; v < cpsHeight; ++v)
-    {
-        for (let u = 0; u < cpsWidth; ++u)
-        {
-            cpsArray[v * cpsWidth + u] = [minW + u * h, minH + v * h];
-        }
-    }
-    const cpsTypedArray = new Int32Array(cpsArray);
     
-    // degree
-    const degree = 3;
-    
-    // knots
-    const knotNumbers = cpsWidth + degree - 1;
-    const knotArray = [];
-    for (let i = 0; i < knotNumbers; ++i)
-    {
-        knotArray[i] = i;
-    }
-    const knotTypedArray = new Uint32Array(knotArray);
-    
-    // calculate domain knots
-    const start = degree - 1;                   // domain start point
-    const end = knotTypedArray.length - degree;       // domain end point
-    const domainNum = end - start + 1;          // domain knots number
-    
-    // draw points
-    const dTheta = 12;
-    const drawPointsNum = 360 / dTheta;
-    const uDrawArray = [];
-    const vDrawArray = [];
-    let theta = 0;
-    
-    for (let i = 0; i < drawPointsNum; ++i)
-    {
-        theta = i * dTheta;
-        
-        uDrawArray[i] = Number(500 + 400 * Math.cos(theta * Math.PI / 180)) / 1000 * (domainNum - 1) + start;
-        vDrawArray[i] = Number(500 + 400 * Math.sin(theta * Math.PI / 180)) / 1000 * (domainNum - 1) + start;
-    }
-    const uDrawTypedArray = new Float32Array(uDrawArray);
-    const vDrawTypedArray = new Float32Array(vDrawArray);
-    
-    // interval TypedArrays
-    const uIntervalArray = [];
-    const vIntervalArray = [];
-    let interval = 0;
-    for (let i = 0; i < drawPointsNum; ++i)
-    {
-        if (uDrawArray[i] == knotArray[end])
-            interval = end - 1;
-        else
-            interval = findInterval(knotArray, uDrawArray[i]);
-        uIntervalArray[i] = interval;
-        
-        if (vDrawArray[i] == knotArray[end])
-            interval = end - 1;
-        else
-            interval = findInterval(knotArray, vDrawArray[i]);
-        vIntervalArray[i] = interval;
-    }
-    const uIntervalTypedArray = new Uint32Array(uIntervalArray);
-    const vIntervalTypedArray = new Uint32Array(vIntervalArray);
-    
-    // uResult & tempCps size
-    const uResultLength = uDrawTypedArray.length * cpsHeight;
-    const output_U_V_Offset = uDrawTypedArray.length;
-    const tempWidth = degree + 1;
-    
-    // shader
+    // Shader
     const vertexShaderModule = device.createShaderModule({
         label: 'B Spline Surface Vertex Module',
         code: vertexShaderSrc(),
@@ -134,7 +63,7 @@ async function main() {
         code: computeShaderSrc(degree, cpsWidth, cpsHeight, uResultLength, tempWidth),
     });
 
-    // pipeline
+    // Pipeline
     // 튜토리얼에서는 파이프라인에 compute: { module, } 프로퍼티를 넣었는데, 여기의 module이 변수명이 아니라 프로퍼티 명이었다... 어쩐지 module 대신 computeShaderModule을 넣으면 오류나더라....
     const renderPipeline = device.createRenderPipeline({
         label: 'B Spline Surface Render Pipeline',
@@ -176,8 +105,88 @@ async function main() {
             },
         ],
     };
+    
+    // TypedArrays
+    // control points
+    const cpsArray = [];
+    for (let v = 0; v < cpsHeight; ++v) {
+        for (let u = 0; u < cpsWidth; ++u) {
+            cpsArray[v * cpsWidth + u] = [minW + u * h, minH + v * h];
+        }
+    }
+    const cpsTypedArray = new Int32Array(cpsArray);
 
-    // buffers
+    // degree
+    const degree = 3;
+
+    // knots
+    const knotNumbers = cpsWidth + degree - 1;
+    const knotArray = [];
+    for (let i = 0; i < knotNumbers; ++i) {
+        knotArray[i] = i;
+    }
+    const knotTypedArray = new Uint32Array(knotArray);
+
+    // calculate domain knots
+    const start = degree - 1;                   // domain start point
+    const end = knotTypedArray.length - degree;       // domain end point
+    const domainNum = end - start + 1;          // domain knots number
+
+    // draw points
+    const dTheta = 12;
+    const drawPointsNum = 360 / dTheta;
+    const uDrawArray = [];
+    const vDrawArray = [];
+    let theta = 0;
+
+    for (let i = 0; i < drawPointsNum; ++i) {
+        theta = i * dTheta;
+
+        uDrawArray[i] = Number(500 + 400 * Math.cos(theta * Math.PI / 180)) / 1000 * (domainNum - 1) + start;
+        vDrawArray[i] = Number(500 + 400 * Math.sin(theta * Math.PI / 180)) / 1000 * (domainNum - 1) + start;
+    }
+    const uDrawTypedArray = new Float32Array(uDrawArray);
+    const vDrawTypedArray = new Float32Array(vDrawArray);
+
+    // interval TypedArrays
+    const uIntervalArray = [];
+    const vIntervalArray = [];
+    let interval = 0;
+    for (let i = 0; i < drawPointsNum; ++i) {
+        if (uDrawArray[i] == knotArray[end])
+            interval = end - 1;
+        else
+            interval = findInterval(knotArray, uDrawArray[i]);
+        uIntervalArray[i] = interval;
+
+        if (vDrawArray[i] == knotArray[end])
+            interval = end - 1;
+        else
+            interval = findInterval(knotArray, vDrawArray[i]);
+        vIntervalArray[i] = interval;
+    }
+    const uIntervalTypedArray = new Uint32Array(uIntervalArray);
+    const vIntervalTypedArray = new Uint32Array(vIntervalArray);
+
+    // uResult & tempCps size
+    const uResultLength = uDrawTypedArray.length * cpsHeight;
+    const output_U_V_Offset = uDrawTypedArray.length;
+    const tempWidth = degree + 1;
+    
+    // vertex data
+    const controlPointSize = 4;
+
+    // Buffers
+    const uniformTypedArray = new Float32Array(3);
+    const resolutionOffset = 0;
+    const resolutionValue = uniformTypedArray.subarray(resolutionOffset, resolutionOffset + 3);
+    
+    const uniformBuffer = device.createBuffer({
+        label: 'uniform buffer',
+        size: uniformTypedArray.byteLength,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    
     // writeBuffer를 통해 데이터를 넣는 행위에도 usage: COPY_DST가 필요하다.
     const uInputsBuffer = device.createBuffer({
         label: 'uInputs buffer',
@@ -254,7 +263,7 @@ async function main() {
         computePass.end();
 
         renderPass.setPipeline(renderPipeline);
-        renderPass.draw(1);
+        renderPass.draw(6);
         renderPass.end();
 
         const commandBuffer = encoder.finish();
