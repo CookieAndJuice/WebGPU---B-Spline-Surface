@@ -189,7 +189,7 @@ async function main() {
     
     // writeBuffer를 통해 데이터를 넣는 행위에도 usage: COPY_DST가 필요하다.
     const uInputsBuffer = device.createBuffer({
-        label: 'uInputs buffer',
+        label: 'compute shader input data buffer',
         size: drawPointsNum * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
@@ -241,12 +241,7 @@ async function main() {
         layout: computePipeline.getBindGroupLayout(0),
         entries: [
             { binding: 0, resource: { buffer: uInputsBuffer } },
-            { binding: 1, resource: { buffer: vInputsBuffer } },
-            { binding: 2, resource: { buffer: controlPointsBuffer } },
-            { binding: 3, resource: { buffer: knotsBuffer } },
-            { binding: 4, resource: { buffer: uIntervalsBuffer } },
-            { binding: 5, resource: { buffer: vIntervalsBuffer } },
-            { binding: 6, resource: { buffer: outputBuffer } },
+            { binding: 1, resource: { buffer: outputBuffer } },
         ]
     });
 

@@ -2,25 +2,20 @@
 export function computeShaderSrc(degree, cpsWidth, cpsHeight, uResultLength, tempWidth)
 {
     return /* wgsl */`
+        struct InputData
+        {
+            uInputs: array<f32>;
+            vInputs: array<f32>;
+            control_points: array<vec2<f32>>;
+            knots: array<u32>;
+            uIntervals: array<u32>;
+            vIntervals: array<u32>;
+        }
+
         @group(0) @binding(0)
-        var<storage, read> uInputs: array<f32>;
+        var<storage, read> inDatas: InputData;
 
         @group(0) @binding(1)
-        var<storage, read> vInputs: array<f32>;
-
-        @group(0) @binding(2)
-        var<storage, read> control_points: array<vec2<f32>>;
-
-        @group(0) @binding(3)
-        var<storage, read> knots: array<u32>;
-
-        @group(0) @binding(4)
-        var<storage, read> uIntervals: array<u32>;
-
-        @group(0) @binding(5)
-        var<storage, read> vIntervals: array<u32>;
-
-        @group(0) @binding(6)
         var<storage, read_write> output: array<f32>;
 
         @compute @workgroup_size(32)
@@ -36,8 +31,8 @@ export function computeShaderSrc(degree, cpsWidth, cpsHeight, uResultLength, tem
             
             // de Boor Algorithm
             let tempWidth = degree + 1;
-            let uInterval = uIntervals[index];
-            let vInterval = vIntervals[index];
+            let uInterval = inDatas.uIntervals[index];
+            let vInterval = inDatas.vIntervals[index];
             
             // u 방향 계산 (계산 순서 : u 하나에 대해 모든 높이 계산 -> 다음 u 계산)
             let yOffset = cpsWidth;                                     // 높이값 넘어갈 때 offset
@@ -48,7 +43,7 @@ export function computeShaderSrc(degree, cpsWidth, cpsHeight, uResultLength, tem
                 var tempCps: array<vec2<f32>, ${tempWidth}>;                          // 계산값 임시 저장 리스트
                 for(var num = 0u; num < ${tempWidth}; num++)
                 {
-                    tempCps[num] = control_points[nowPos + num];
+                    tempCps[num] = inDatas.control_points[nowPos + num];
                 }
                 
                 for (var k = 1u; k < degree + 1; k++)
@@ -58,7 +53,7 @@ export function computeShaderSrc(degree, cpsWidth, cpsHeight, uResultLength, tem
                     
                     for (var i = uInterval + 1u; i > iInitial - 1u; i--)
                     {
-                        let alpha = (uInputs[index] - f32(knots[i - 1])) / f32(knots[i + degree - k] - knots[i - 1]);
+                        let alpha = (inDatas.uInputs[index] - f32(inDatas.knots[i - 1])) / f32(inDatas.knots[i + degree - k] - inDatas.knots[i - 1]);
                         tempCps[uIntervalIndex] = (1 - alpha) * tempCps[uIntervalIndex - 1] + alpha * tempCps[uIntervalIndex];
                         uIntervalIndex--;
                     }
@@ -67,9 +62,9 @@ export function computeShaderSrc(degree, cpsWidth, cpsHeight, uResultLength, tem
             }
             
             // v 방향 계산
-            let xOffset = tempWidth;                                    // 너비값 넘어갈 때 offset
+            let xOffset = tempWidth;                    // 너비값 넘어갈 때 offset
             
-            let nowPos = index * xOffset;                // 계산값 임시 저장 리스트
+            let nowPos = index * xOffset;               // 계산값 임시 저장 리스트
             var vTempCps: array<vec2<f32>, ${tempWidth}>;
             for(var num = 0u; num < ${tempWidth}; num++)
             {
@@ -83,7 +78,7 @@ export function computeShaderSrc(degree, cpsWidth, cpsHeight, uResultLength, tem
                 
                 for (var i = vInterval + 1u; i > iInitial - 1u; i--)
                 {
-                    let alpha = (vInputs[index] - f32(knots[i - 1])) / f32(knots[i + degree - k] - knots[i - 1]);
+                    let alpha = (inDatas.vInputs[index] - f32(inDatas.knots[i - 1])) / f32(inDatas.knots[i + degree - k] - inDatas.knots[i - 1]);
                     vTempCps[vIntervalIndex] = (1 - alpha) * vTempCps[vIntervalIndex - 1] + alpha * vTempCps[vIntervalIndex];
                     vIntervalIndex--;
                 }
