@@ -2,26 +2,24 @@
 export function computeShaderSrc(degree, cpsWidth, cpsHeight, uResultLength, tempWidth)
 {
     return /* wgsl */`
-        struct InputData
-        {
-            uInputs: array<f32>;
-            vInputs: array<f32>;
-            control_points: array<vec2<f32>>;
-            knots: array<u32>;
-            uIntervals: array<u32>;
-            vIntervals: array<u32>;
-        }
-
         @group(0) @binding(0)
-        var<storage, read> inDatas: InputData;
+        var<storage, read> control_points: array<vec2f>;
 
         @group(0) @binding(1)
-        var<storage, read_write> output: array<f32>;
+        var<storage, read> knots: array<u32>;
+
+        @group(0) @binding(2)
+        var<storage, read> inputs: array<vec2f>;
+
+        @group(0) @binding(3)
+        var<storage, read> intervals: array<vec2u>;
+
+        @group(0) @binding(4)
+        var<storage, read_write> output: array<vec2f>;
 
         @compute @workgroup_size(32)
         fn main(@builtin(global_invocation_id) global_invocation_id: vec3u)
-        {
-            
+        { 
             let degree = u32(${degree});
             let cpsWidth = u32(${cpsWidth});
             let cpsHeight = u32(${cpsHeight});
@@ -31,8 +29,8 @@ export function computeShaderSrc(degree, cpsWidth, cpsHeight, uResultLength, tem
             
             // de Boor Algorithm
             let tempWidth = degree + 1;
-            let uInterval = inDatas.uIntervals[index];
-            let vInterval = inDatas.vIntervals[index];
+            let uInterval = intervals[index].x;
+            let vInterval = intervals[index].y;
             
             // u 방향 계산 (계산 순서 : u 하나에 대해 모든 높이 계산 -> 다음 u 계산)
             let yOffset = cpsWidth;                                     // 높이값 넘어갈 때 offset
@@ -43,7 +41,7 @@ export function computeShaderSrc(degree, cpsWidth, cpsHeight, uResultLength, tem
                 var tempCps: array<vec2<f32>, ${tempWidth}>;                          // 계산값 임시 저장 리스트
                 for(var num = 0u; num < ${tempWidth}; num++)
                 {
-                    tempCps[num] = inDatas.control_points[nowPos + num];
+                    tempCps[num] = control_points[nowPos + num];
                 }
                 
                 for (var k = 1u; k < degree + 1; k++)
@@ -53,7 +51,7 @@ export function computeShaderSrc(degree, cpsWidth, cpsHeight, uResultLength, tem
                     
                     for (var i = uInterval + 1u; i > iInitial - 1u; i--)
                     {
-                        let alpha = (inDatas.uInputs[index] - f32(inDatas.knots[i - 1])) / f32(inDatas.knots[i + degree - k] - inDatas.knots[i - 1]);
+                        let alpha = (inputs[index].x - f32(knots[i - 1])) / f32(knots[i + degree - k] - knots[i - 1]);
                         tempCps[uIntervalIndex] = (1 - alpha) * tempCps[uIntervalIndex - 1] + alpha * tempCps[uIntervalIndex];
                         uIntervalIndex--;
                     }
@@ -78,13 +76,12 @@ export function computeShaderSrc(degree, cpsWidth, cpsHeight, uResultLength, tem
                 
                 for (var i = vInterval + 1u; i > iInitial - 1u; i--)
                 {
-                    let alpha = (inDatas.vInputs[index] - f32(inDatas.knots[i - 1])) / f32(inDatas.knots[i + degree - k] - inDatas.knots[i - 1]);
+                    let alpha = (inputs[index].y - f32(knots[i - 1])) / f32(knots[i + degree - k] - knots[i - 1]);
                     vTempCps[vIntervalIndex] = (1 - alpha) * vTempCps[vIntervalIndex - 1] + alpha * vTempCps[vIntervalIndex];
                     vIntervalIndex--;
                 }
             }
-            output[index] = vTempCps[degree].x;
-            output[index + 31] = vTempCps[degree].y;
+            output[index] = vTempCps[degree];
         }
     `;
 }

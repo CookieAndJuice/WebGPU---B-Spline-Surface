@@ -34,18 +34,17 @@ async function main() {
     // Screen Setting
     const screenWidth = 2560;
     const screenHeight = 1440;
+    const aspect = screenWidth / screenHeight;
 
     // Basic Setting
-    const cpsWidth = 10;
-    const cpsHeight = 10;
-    const diff = screenHeight / 5;
-
-    const minW = parseInt(screenWidth / 2 - (diff * 3 / 2));
-    const maxW = minW + diff * 3;
-    const minH = parseInt(screenHeight / 2 - (diff * 3 / 2));
-    const maxH = minH + diff * 3;
+    const maxRange = 0.75;
     
-    const h = diff * 3 / (cpsWidth - 1);
+    const maxWidth = maxRange;
+    const maxHeight = maxRange;
+    if (aspect > 1)
+        maxWidth = maxRange / aspect;
+    else
+        maxHeight = maxRange * aspect;
     
     // Shader
     const vertexShaderModule = device.createShaderModule({
@@ -106,16 +105,26 @@ async function main() {
         ],
     };
     
+    // control points
+    const cpsWidth = 10;
+    const cpsHeight = 10;
+    const offsetX = maxWidth / (cpsWidth - 1);
+    const offsetY = maxHeight / (cpsHeight - 1);
+    
     // TypedArrays
     // control points
-    const cpsArray = [];
+    const controlPointUnitSize = 2 * 4;         // vec2<f32>
+    const controlPointsSize = controlPointUnitSize * cpsHeight * cpsWidth;
+    const cpsTypedArray = new Int32Array(controlPointsSize);
     for (let v = 0; v < cpsHeight; ++v) {
         for (let u = 0; u < cpsWidth; ++u) {
-            cpsArray[v * cpsWidth + u] = [minW + u * h, minH + v * h];
+            const cpsOffset = (v * cpsWidth + u) * (controlPointUnitSize / 4);
+            
+            cpsTypedArray.set([-maxWidth + offsetX * u, -maxHeight + offsetY * v], cpsOffset);
         }
     }
-    const cpsTypedArray = new Int32Array(cpsArray);
-
+    
+                // 여기부터 수정하기------------------------------------------------------------------------
     // degree
     const degree = 3;
 
@@ -128,13 +137,16 @@ async function main() {
     const knotTypedArray = new Uint32Array(knotArray);
 
     // calculate domain knots
-    const start = degree - 1;                   // domain start point
-    const end = knotTypedArray.length - degree;       // domain end point
-    const domainNum = end - start + 1;          // domain knots number
+    const start = degree - 1;                       // domain start point
+    const end = knotTypedArray.length - degree;     // domain end point
+    const domainNum = end - start + 1;              // domain knots number
 
-    // draw points
+    // draw points & intervals
     const dTheta = 12;
     const drawPointsNum = 360 / dTheta;
+    const vertexDataUnitSize = 4 * 4;
+    const vertexDataSize = 4 * 4 * drawPointsNum;
+    
     const uDrawArray = [];
     const vDrawArray = [];
     let theta = 0;
@@ -145,8 +157,7 @@ async function main() {
         uDrawArray[i] = Number(500 + 400 * Math.cos(theta * Math.PI / 180)) / 1000 * (domainNum - 1) + start;
         vDrawArray[i] = Number(500 + 400 * Math.sin(theta * Math.PI / 180)) / 1000 * (domainNum - 1) + start;
     }
-    const uDrawTypedArray = new Float32Array(uDrawArray);
-    const vDrawTypedArray = new Float32Array(vDrawArray);
+    const vertexDataTypedArray = new Float32Array(uDrawArray);
 
     // interval TypedArrays
     const uIntervalArray = [];
@@ -172,9 +183,6 @@ async function main() {
     const uResultLength = uDrawTypedArray.length * cpsHeight;
     const output_U_V_Offset = uDrawTypedArray.length;
     const tempWidth = degree + 1;
-    
-    // vertex data
-    const controlPointSize = 4;
 
     // Buffers
     const uniformTypedArray = new Float32Array(3);
@@ -187,24 +195,11 @@ async function main() {
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     
+    
     // writeBuffer를 통해 데이터를 넣는 행위에도 usage: COPY_DST가 필요하다.
-    const uInputsBuffer = device.createBuffer({
-        label: 'compute shader input data buffer',
-        size: drawPointsNum * 4,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
-    });
-    device.queue.writeBuffer(uInputsBuffer, 0, uDrawTypedArray);
-
-    const vInputsBuffer = device.createBuffer({
-        label: 'vInputs buffer',
-        size: drawPointsNum * 4,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
-    });
-    device.queue.writeBuffer(vInputsBuffer, 0, vDrawTypedArray);
-
     const controlPointsBuffer = device.createBuffer({
         label: 'control_points buffer',
-        size: cpsHeight * cpsWidth * 2 * 4,
+        size: controlPointsSize,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
     device.queue.writeBuffer(controlPointsBuffer, 0, cpsTypedArray);
@@ -215,20 +210,20 @@ async function main() {
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
     device.queue.writeBuffer(knotsBuffer, 0, knotTypedArray);
+    
+    const inputBuffer = device.createBuffer({
+        label: 'compute shader input data buffer',
+        size: drawPointsNum * 4,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(inputBuffer, 0, uDrawTypedArray);
 
-    const uIntervalsBuffer = device.createBuffer({
+    const intervalBuffer = device.createBuffer({
         label: 'uIntervals buffer',
         size: drawPointsNum * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
-    device.queue.writeBuffer(uIntervalsBuffer, 0, uIntervalTypedArray);
-
-    const vIntervalsBuffer = device.createBuffer({
-        label: 'vIntervals buffer',
-        size: drawPointsNum * 4,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
-    });
-    device.queue.writeBuffer(vIntervalsBuffer, 0, vIntervalTypedArray);
+    device.queue.writeBuffer(intervalBuffer, 0, uIntervalTypedArray);
 
     const outputBuffer = device.createBuffer({
         label: 'output buffer',
@@ -240,8 +235,11 @@ async function main() {
         label: 'bindGroup for compute shader',
         layout: computePipeline.getBindGroupLayout(0),
         entries: [
-            { binding: 0, resource: { buffer: uInputsBuffer } },
-            { binding: 1, resource: { buffer: outputBuffer } },
+            { binding: 0, resource: { buffer: controlPointsBuffer } },
+            { binding: 1, resource: { buffer: knotsBuffer } },
+            { binding: 2, resource: { buffer: inputBuffer } },
+            { binding: 3, resource: { buffer: intervalBuffer } },
+            { binding: 4, resource: { buffer: outputBuffer } },
         ]
     });
 
