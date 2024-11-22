@@ -141,14 +141,13 @@ async function main() {
     const end = knotTypedArray.length - degree;     // domain end point
     const domainNum = end - start + 1;              // domain knots number
 
-    // draw points & intervals
+    // draw points
     const dTheta = 12;
     const drawPointsNum = 360 / dTheta;
     const vertexDataUnitSize = 4 * 4;
     const vertexDataSize = 4 * 4 * drawPointsNum;
     
-    const uDrawArray = [];
-    const vDrawArray = [];
+    const drawPointsArray = [];
     let theta = 0;
 
     for (let i = 0; i < drawPointsNum; ++i) {
@@ -159,7 +158,7 @@ async function main() {
     }
     const vertexDataTypedArray = new Float32Array(uDrawArray);
 
-    // interval TypedArrays
+    // intervals
     const uIntervalArray = [];
     const vIntervalArray = [];
     let interval = 0;
