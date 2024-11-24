@@ -16,6 +16,7 @@ export function vertexShaderSrc()
         };
 
         @group(0) @binding(0) var<uniform> unif: Uniforms;
+        @group(0) @binding(1) var<storage, read> vert: Vertex;
 
         @vertex fn vs(
             vert: Vertex,
@@ -39,7 +40,7 @@ export function fragmentShaderSrc()
 
         @fragment fn fs(fsIn: FSInput) -> FSInput
         {
-            return vec4f(0.5, 0.5, 1, 1);
+            return vec4f(0.5, 0.5, 0.5, 1);
         }
     `;
 }

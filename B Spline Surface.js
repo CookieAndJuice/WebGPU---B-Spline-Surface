@@ -46,6 +46,81 @@ async function main() {
     else
         maxHeight = maxRange * aspect;
     
+    // control points
+    const cpsWidth = 10;
+    const cpsHeight = 10;
+    const offsetX = maxWidth / (cpsWidth - 1);
+    const offsetY = maxHeight / (cpsHeight - 1);
+
+    // TypedArrays
+    // control points
+    const controlPointUnitSize = 2 * 4;         // vec2<f32>
+    const controlPointsSize = controlPointUnitSize * cpsHeight * cpsWidth;
+    const cpsTypedArray = new Int32Array(controlPointsSize);
+    for (let v = 0; v < cpsHeight; ++v) {
+        for (let u = 0; u < cpsWidth; ++u) {
+            const cpsOffset = (v * cpsWidth + u) * (controlPointUnitSize / 4);
+
+            cpsTypedArray.set([-maxWidth + offsetX * u, -maxHeight + offsetY * v], cpsOffset);
+        }
+    }
+
+    // degree
+    const degree = 3;
+
+    // knots
+    const knotNumbers = cpsWidth + degree - 1;
+    const knotArray = [];
+    for (let i = 0; i < knotNumbers; ++i) {
+        knotArray[i] = i;
+    }
+    const knotTypedArray = new Uint32Array(knotArray);
+
+    // calculate domain knots
+    const start = degree - 1;                       // domain start point
+    const end = knotTypedArray.length - degree;     // domain end point
+    const domainNum = end - start + 1;              // domain knots number
+
+    // draw points
+    const dTheta = 12;
+    const drawPointsNum = 360 / dTheta;
+    const drawPointsUnitSize = 2 * 4;           // vec2<f32>
+    const drawPointsSize = drawPointsUnitSize * drawPointsNum;
+
+    let theta = 0;
+    let radius = 4;
+    const drawPointsArray = [];
+    for (let i = 0; i < drawPointsNum; ++i) {
+        theta = i * dTheta;
+
+        drawPointsArray[i] = [Number(radius * Math.cos(theta * Math.PI / 180)) * (domainNum - 1) + start,
+                              Number(radius * Math.sin(theta * Math.PI / 180)) * (domainNum - 1) + start];
+    }
+    const drawPointsTypedArray = new Float32Array(drawPointsArray);
+
+    // intervals
+    const intervalArray = [];
+    let uInterval = 0;
+    let vInterval = 0;
+    for (let i = 0; i < drawPointsNum; ++i) {
+        if (drawPointsArray[i][0] == knotArray[end])
+            uInterval = end - 1;
+        else
+            uInterval = findInterval(knotArray, drawPointsArray[i][0]);
+
+        if (drawPointsArray[i][1] == knotArray[end])
+            vInterval = end - 1;
+        else
+            vInterval = findInterval(knotArray, drawPointsArray[i][1]);
+        intervalArray[i] = [uInterval, vInterval];
+    }
+    const intervalTypedArray = new Uint32Array(intervalArray);
+
+    // uResult & tempCps size
+    const uResultLength = drawPointsArray.length * cpsHeight;
+    const output_U_V_Offset = drawPointsArray.length;
+    const tempWidth = degree + 1;    
+    
     // Shader
     const vertexShaderModule = device.createShaderModule({
         label: 'B Spline Surface Vertex Module',
@@ -104,86 +179,8 @@ async function main() {
             },
         ],
     };
-    
-    // control points
-    const cpsWidth = 10;
-    const cpsHeight = 10;
-    const offsetX = maxWidth / (cpsWidth - 1);
-    const offsetY = maxHeight / (cpsHeight - 1);
-    
-    // TypedArrays
-    // control points
-    const controlPointUnitSize = 2 * 4;         // vec2<f32>
-    const controlPointsSize = controlPointUnitSize * cpsHeight * cpsWidth;
-    const cpsTypedArray = new Int32Array(controlPointsSize);
-    for (let v = 0; v < cpsHeight; ++v) {
-        for (let u = 0; u < cpsWidth; ++u) {
-            const cpsOffset = (v * cpsWidth + u) * (controlPointUnitSize / 4);
-            
-            cpsTypedArray.set([-maxWidth + offsetX * u, -maxHeight + offsetY * v], cpsOffset);
-        }
-    }
-    
-                // 여기부터 수정하기------------------------------------------------------------------------
-    // degree
-    const degree = 3;
 
-    // knots
-    const knotNumbers = cpsWidth + degree - 1;
-    const knotArray = [];
-    for (let i = 0; i < knotNumbers; ++i) {
-        knotArray[i] = i;
-    }
-    const knotTypedArray = new Uint32Array(knotArray);
-
-    // calculate domain knots
-    const start = degree - 1;                       // domain start point
-    const end = knotTypedArray.length - degree;     // domain end point
-    const domainNum = end - start + 1;              // domain knots number
-
-    // draw points
-    const dTheta = 12;
-    const drawPointsNum = 360 / dTheta;
-    const vertexDataUnitSize = 4 * 4;
-    const vertexDataSize = 4 * 4 * drawPointsNum;
-    
-    const drawPointsArray = [];
-    let theta = 0;
-
-    for (let i = 0; i < drawPointsNum; ++i) {
-        theta = i * dTheta;
-
-        uDrawArray[i] = Number(500 + 400 * Math.cos(theta * Math.PI / 180)) / 1000 * (domainNum - 1) + start;
-        vDrawArray[i] = Number(500 + 400 * Math.sin(theta * Math.PI / 180)) / 1000 * (domainNum - 1) + start;
-    }
-    const vertexDataTypedArray = new Float32Array(uDrawArray);
-
-    // intervals
-    const uIntervalArray = [];
-    const vIntervalArray = [];
-    let interval = 0;
-    for (let i = 0; i < drawPointsNum; ++i) {
-        if (uDrawArray[i] == knotArray[end])
-            interval = end - 1;
-        else
-            interval = findInterval(knotArray, uDrawArray[i]);
-        uIntervalArray[i] = interval;
-
-        if (vDrawArray[i] == knotArray[end])
-            interval = end - 1;
-        else
-            interval = findInterval(knotArray, vDrawArray[i]);
-        vIntervalArray[i] = interval;
-    }
-    const uIntervalTypedArray = new Uint32Array(uIntervalArray);
-    const vIntervalTypedArray = new Uint32Array(vIntervalArray);
-
-    // uResult & tempCps size
-    const uResultLength = uDrawTypedArray.length * cpsHeight;
-    const output_U_V_Offset = uDrawTypedArray.length;
-    const tempWidth = degree + 1;
-
-    // Buffers
+    // VS Uniform Buffers
     const uniformTypedArray = new Float32Array(3);
     const resolutionOffset = 0;
     const resolutionValue = uniformTypedArray.subarray(resolutionOffset, resolutionOffset + 3);
@@ -195,6 +192,8 @@ async function main() {
     });
     
     
+    
+    // CS Storage Buffers
     // writeBuffer를 통해 데이터를 넣는 행위에도 usage: COPY_DST가 필요하다.
     const controlPointsBuffer = device.createBuffer({
         label: 'control_points buffer',
@@ -215,14 +214,14 @@ async function main() {
         size: drawPointsNum * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
-    device.queue.writeBuffer(inputBuffer, 0, uDrawTypedArray);
+    device.queue.writeBuffer(inputBuffer, 0, drawPointsTypedArray);
 
     const intervalBuffer = device.createBuffer({
         label: 'uIntervals buffer',
         size: drawPointsNum * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
-    device.queue.writeBuffer(intervalBuffer, 0, uIntervalTypedArray);
+    device.queue.writeBuffer(intervalBuffer, 0, intervalTypedArray);
 
     const outputBuffer = device.createBuffer({
         label: 'output buffer',
