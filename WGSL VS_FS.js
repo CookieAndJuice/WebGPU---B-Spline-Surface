@@ -19,7 +19,6 @@ export function vertexShaderSrc()
         @group(0) @binding(1) var<storage, read> vert: Vertex;
 
         @vertex fn vs(
-            vert: Vertex,
             @builtin(vertex_index) vIndex: u32,
         ) -> VSOutput
         {

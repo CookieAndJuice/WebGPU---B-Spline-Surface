@@ -243,7 +243,7 @@ async function main() {
 
     function render() {
         const encoder = device.createCommandEncoder({ label: "compute encoder" });
-        const computePass = encoder.beginComputePass({ label: "compute pass" } );
+        const computePass = encoder.beginComputePass({ label: "compute pass" });
 
         renderPassDescriptor.colorAttachments[0].view = context.getCurrentTexture().createView();
         const renderPass = encoder.beginRenderPass(renderPassDescriptor);
@@ -254,7 +254,7 @@ async function main() {
         computePass.end();
 
         renderPass.setPipeline(renderPipeline);
-        renderPass.draw(6);
+        renderPass.draw(cpsWidth * cpsHeight);
         renderPass.end();
 
         const commandBuffer = encoder.finish();
