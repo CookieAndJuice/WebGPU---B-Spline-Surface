@@ -2,8 +2,12 @@
 export function vertexShaderSrc()
 {
     return /*wgsl*/`
-        struct Vertex {
+        struct ControlPoints {
             @location(0) position: vec2f,
+        };
+
+        struct SplineVertex {
+            @location(1) position: vec2f,
         };
 
         struct Uniforms {
@@ -16,7 +20,8 @@ export function vertexShaderSrc()
         };
 
         @group(0) @binding(0) var<uniform> unif: Uniforms;
-        @group(0) @binding(1) var<storage, read> vert: Vertex;
+        @group(0) @binding(1) var<storage, read> controlPoints: ControlPoints;
+        @group(0) @binding(2) var<storage, read> splineVertices: SplineVertex;
 
         @vertex fn vs(
             @builtin(vertex_index) vIndex: u32,

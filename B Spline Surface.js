@@ -47,6 +47,7 @@ async function main() {
         maxHeight = maxRange * aspect;
     
     // control points
+    const vertexSize = 16;
     const cpsWidth = 10;
     const cpsHeight = 10;
     const offsetX = maxWidth / (cpsWidth - 1);
@@ -182,16 +183,13 @@ async function main() {
 
     // VS Uniform Buffers
     const uniformTypedArray = new Float32Array(3);
-    const resolutionOffset = 0;
-    const resolutionValue = uniformTypedArray.subarray(resolutionOffset, resolutionOffset + 3);
+    uniformTypedArray.set([vertexSize, [screenWidth, screenHeight]]);
     
     const uniformBuffer = device.createBuffer({
         label: 'uniform buffer',
         size: uniformTypedArray.byteLength,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
-    
-    
     
     // CS Storage Buffers
     // writeBuffer를 통해 데이터를 넣는 행위에도 usage: COPY_DST가 필요하다.
