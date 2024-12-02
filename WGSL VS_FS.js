@@ -2,12 +2,8 @@
 export function vertexShaderSrc()
 {
     return /*wgsl*/`
-        struct ControlPoints {
+        struct Vertices {
             @location(0) position: vec2f,
-        };
-
-        struct SplineVertex {
-            @location(1) position: vec2f,
         };
 
         struct Uniforms {
@@ -20,15 +16,14 @@ export function vertexShaderSrc()
         };
 
         @group(0) @binding(0) var<uniform> unif: Uniforms;
-        @group(0) @binding(1) var<storage, read> controlPoints: ControlPoints;
-        @group(0) @binding(2) var<storage, read> splineVertices: SplineVertex;
+        @group(0) @binding(1) var<storage> vert: array<Vertices>;
 
         @vertex fn vs(
             @builtin(vertex_index) vIndex: u32,
         ) -> VSOutput
         {
             var vsOut: VSOutput;
-            vsOut.position = vec4f(vert.position + unif.size / unif.resolution, 0, 1);
+            vsOut.position = vec4f(vert[vIndex].position + unif.vertexSize / unif.resolution, 0, 1);
 
             return vsOut;
         }
@@ -42,8 +37,10 @@ export function fragmentShaderSrc()
             @builtin(position) position: vec4f,
         }
 
-        @fragment fn fs(fsIn: FSInput) -> FSInput
+        @fragment fn fs(fsIn: FSInput) -> @location(0) vec4f
         {
+            
+
             return vec4f(0.5, 0.5, 0.5, 1);
         }
     `;

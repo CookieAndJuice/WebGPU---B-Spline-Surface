@@ -39,8 +39,8 @@ async function main() {
     // Basic Setting
     const maxRange = 0.75;
     
-    const maxWidth = maxRange;
-    const maxHeight = maxRange;
+    let maxWidth = maxRange;
+    let maxHeight = maxRange;
     if (aspect > 1)
         maxWidth = maxRange / aspect;
     else
@@ -57,7 +57,7 @@ async function main() {
     // control points
     const controlPointUnitSize = 2 * 4;         // vec2<f32>
     const controlPointsSize = controlPointUnitSize * cpsHeight * cpsWidth;
-    const cpsTypedArray = new Int32Array(controlPointsSize);
+    const cpsTypedArray = new Int32Array(controlPointsSize / 4);
     for (let v = 0; v < cpsHeight; ++v) {
         for (let u = 0; u < cpsWidth; ++u) {
             const cpsOffset = (v * cpsWidth + u) * (controlPointUnitSize / 4);
@@ -75,7 +75,7 @@ async function main() {
     for (let i = 0; i < knotNumbers; ++i) {
         knotArray[i] = i;
     }
-    const knotTypedArray = new Uint32Array(knotArray);
+    const knotTypedArray = new Uint32Array(knotArray / 4);
 
     // calculate domain knots
     const start = degree - 1;                       // domain start point
@@ -97,7 +97,7 @@ async function main() {
         drawPointsArray[i] = [Number(radius * Math.cos(theta * Math.PI / 180)) * (domainNum - 1) + start,
                               Number(radius * Math.sin(theta * Math.PI / 180)) * (domainNum - 1) + start];
     }
-    const drawPointsTypedArray = new Float32Array(drawPointsArray);
+    const drawPointsTypedArray = new Float32Array(drawPointsArray / 4);
 
     // intervals
     const intervalArray = [];
@@ -115,7 +115,7 @@ async function main() {
             vInterval = findInterval(knotArray, drawPointsArray[i][1]);
         intervalArray[i] = [uInterval, vInterval];
     }
-    const intervalTypedArray = new Uint32Array(intervalArray);
+    const intervalTypedArray = new Uint32Array(intervalArray / 4);
 
     // uResult & tempCps size
     const uResultLength = drawPointsArray.length * cpsHeight;
@@ -145,19 +145,10 @@ async function main() {
         layout: 'auto',
         vertex: {
             module: vertexShaderModule,
-            buffers: [
-                {
-                    arrayStride: (2 + 1) * 4,
-                    stepMode: 'instance',
-                    attributes: [
-                        { shaderLocation: 0, offset: 0, format: 'float32x2' },  // position
-                    ]
-                }
-            ]
         },
         fragment: {
             module: fragmentShaderModule,
-            target: [{ format: presentationFormat }],
+            targets: [{ format: presentationFormat }],
         },
     });
 
@@ -180,16 +171,6 @@ async function main() {
             },
         ],
     };
-
-    // VS Uniform Buffers
-    const uniformTypedArray = new Float32Array(3);
-    uniformTypedArray.set([vertexSize, [screenWidth, screenHeight]]);
-    
-    const uniformBuffer = device.createBuffer({
-        label: 'uniform buffer',
-        size: uniformTypedArray.byteLength,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
     
     // CS Storage Buffers
     // writeBuffer를 통해 데이터를 넣는 행위에도 usage: COPY_DST가 필요하다.
@@ -239,26 +220,93 @@ async function main() {
         ]
     });
 
-    function render() {
-        const encoder = device.createCommandEncoder({ label: "compute encoder" });
-        const computePass = encoder.beginComputePass({ label: "compute pass" });
+    // VS Uniform Buffers
+    const uniformTypedArray = new Float32Array(4);
+    uniformTypedArray.set([vertexSize, [screenWidth, screenHeight]]);
+    
+    const uniformBuffer = device.createBuffer({
+        label: 'uniform buffer',
+        size: uniformTypedArray.byteLength,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
 
-        renderPassDescriptor.colorAttachments[0].view = context.getCurrentTexture().createView();
-        const renderPass = encoder.beginRenderPass(renderPassDescriptor);
+    // VS Storage Buffers
+    const vertStorageBuffer = device.createBuffer({
+        label: 'vertices storage buffer',
+        size: controlPointsSize + drawPointsNum * 4 * 2,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+    });
 
-        computePass.setPipeline(computePipeline);
-        computePass.setBindGroup(0, computeBindGroup);
-        computePass.dispatchWorkgroups(1);
-        computePass.end();
+    const VSBindGroup = device.createBindGroup({
+        label: 'bindGroup for vertex shader',
+        layout: renderPipeline.getBindGroupLayout(0),
+        entries: [
+            { binding: 0, resource: { buffer: uniformBuffer }},
+            { binding: 1, resource: { buffer: vertStorageBuffer} },
+        ]
+    });
 
-        renderPass.setPipeline(renderPipeline);
-        renderPass.draw(cpsWidth * cpsHeight);
-        renderPass.end();
+    // canvas resize
+    const canvasToSizeMap = new WeakMap();
 
-        const commandBuffer = encoder.finish();
-        device.queue.submit([commandBuffer]);
+    function resizeCanvasToDisplaySize(canvas) {
+        // Get the canvas's current display size
+        let { width, height } = canvasToSizeMap.get(canvas) || canvas;
+
+        // Make sure it's valid for WebGPU
+        width = Math.max(1, Math.min(width, device.limits.maxTextureDimension2D));
+        height = Math.max(1, Math.min(height, device.limits.maxTextureDimension2D));
+
+        // Only if the size is different, set the canvas size
+        const needResize = canvas.width !== width || canvas.height !== height;
+        if (needResize) {
+        canvas.width = width;
+        canvas.height = height;
+        }
+        return needResize;
     }
 
-    render();
+    function render() {
+        {
+            const computeEncoder = device.createCommandEncoder({ label: "compute encoder" });
+            const computePass = computeEncoder.beginComputePass({ label: "compute pass" });
+
+            computePass.setPipeline(computePipeline);
+            computePass.setBindGroup(0, computeBindGroup);
+            computePass.dispatchWorkgroups(1);
+            computePass.end();
+
+            const commandBuffer = computeEncoder.finish();
+            device.queue.submit([commandBuffer]);
+        }
+
+        {
+            const renderEncoder = device.createCommandEncoder({ label: "render encoder" });
+            renderEncoder.copyBufferToBuffer(controlPointsBuffer, 0, vertStorageBuffer, 0, controlPointsSize);
+            renderEncoder.copyBufferToBuffer(outputBuffer, 0, vertStorageBuffer, controlPointsSize, drawPointsNum * 4 * 2);
+
+            renderPassDescriptor.colorAttachments[0].view = context.getCurrentTexture().createView();
+            const renderPass = renderEncoder.beginRenderPass(renderPassDescriptor);
+
+            renderPass.setPipeline(renderPipeline);
+            renderPass.setBindGroup(0, VSBindGroup);
+            renderPass.draw(6, cpsWidth * cpsHeight + drawPointsNum);
+            renderPass.end();
+
+            const commandBuffer = renderEncoder.finish();
+            device.queue.submit([commandBuffer]);
+        }
+    }
+
+    const observer = new ResizeObserver(entries => {
+        for (const entry of entries) {
+          canvasToSizeMap.set(entry.target, {
+             width: entry.contentBoxSize[0].inlineSize,
+             height: entry.contentBoxSize[0].blockSize,
+          });
+        }
+        render();
+      });
+      observer.observe(canvas);
 }
 main();
