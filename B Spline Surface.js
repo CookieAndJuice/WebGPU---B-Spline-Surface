@@ -267,35 +267,33 @@ async function main() {
     }
 
     function render() {
+        const encoder = device.createCommandEncoder({ label: "compute encoder" });
         {
-            const computeEncoder = device.createCommandEncoder({ label: "compute encoder" });
-            const computePass = computeEncoder.beginComputePass({ label: "compute pass" });
+            
+            const computePass = encoder.beginComputePass({ label: "compute pass" });
 
             computePass.setPipeline(computePipeline);
             computePass.setBindGroup(0, computeBindGroup);
             computePass.dispatchWorkgroups(1);
             computePass.end();
-
-            const commandBuffer = computeEncoder.finish();
-            device.queue.submit([commandBuffer]);
         }
 
         {
-            const renderEncoder = device.createCommandEncoder({ label: "render encoder" });
-            renderEncoder.copyBufferToBuffer(controlPointsBuffer, 0, vertStorageBuffer, 0, controlPointsSize);
-            renderEncoder.copyBufferToBuffer(outputBuffer, 0, vertStorageBuffer, controlPointsSize, drawPointsNum * 4 * 2);
+            const encoder = device.createCommandEncoder({ label: "render encoder" });
+            encoder.copyBufferToBuffer(controlPointsBuffer, 0, vertStorageBuffer, 0, controlPointsSize);
+            encoder.copyBufferToBuffer(outputBuffer, 0, vertStorageBuffer, controlPointsSize, drawPointsNum * 4 * 2);
 
             renderPassDescriptor.colorAttachments[0].view = context.getCurrentTexture().createView();
-            const renderPass = renderEncoder.beginRenderPass(renderPassDescriptor);
+            const renderPass = encoder.beginRenderPass(renderPassDescriptor);
 
             renderPass.setPipeline(renderPipeline);
             renderPass.setBindGroup(0, VSBindGroup);
             renderPass.draw(6, cpsWidth * cpsHeight + drawPointsNum);
             renderPass.end();
-
-            const commandBuffer = renderEncoder.finish();
-            device.queue.submit([commandBuffer]);
         }
+        
+        const commandBuffer = encoder.finish();
+        device.queue.submit([commandBuffer]);
     }
 
     const observer = new ResizeObserver(entries => {
