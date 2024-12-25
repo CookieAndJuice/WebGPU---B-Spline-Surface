@@ -1,5 +1,5 @@
 // Vertex Shader & Fragment Shader
-export function vertexShaderSrc()
+export function vertexShaderSrc(aspect)
 {
     return /*wgsl*/`
         struct Vertices {
@@ -15,16 +15,41 @@ export function vertexShaderSrc()
             @builtin(position) position: vec4f,
         };
 
-        @group(0) @binding(0) var<uniform> unif: Uniforms;
-        @group(0) @binding(1) var<storage> vert: array<Vertices>;
+        // @group(0) @binding(0) var<storage> vert: array<Vertices>;
+        @group(0) @binding(1) var<uniform> unif: Uniforms;
 
         @vertex fn vs(
             @builtin(vertex_index) vIndex: u32,
+            vert: Vertices
         ) -> VSOutput
         {
-            var vsOut: VSOutput;
-            vsOut.position = vec4f(vert[vIndex].position + unif.vertexSize / unif.resolution, 0, 1);
+            let points = array(
+                vec2f(-1, -1),
+                vec2f( 1, -1),
+                vec2f(-1,  1),
+                vec2f(-1,  1),
+                vec2f( 1, -1),
+                vec2f( 1,  1),
+            );
 
+            let centerPoint = vert.position;
+            let pos = points[vIndex];
+            let aspect = ${aspect}f;
+
+            var vsOut: VSOutput;
+            var resolution = vec2f(150, 150);
+
+            if (aspect > 1)
+            {
+                resolution = vec2f(resolution.x * aspect, resolution.y);
+            }
+            else
+            {
+                resolution = vec2f(resolution.x, resolution.y / aspect);
+            }
+
+            vsOut.position = vec4f(centerPoint + pos / resolution, 0, 1);
+            
             return vsOut;
         }
     `;
@@ -41,7 +66,7 @@ export function fragmentShaderSrc()
         {
             
 
-            return vec4f(0.5, 0.5, 0.5, 1);
+            return vec4f(0, 0.7, 0.7, 1);
         }
     `;
 }

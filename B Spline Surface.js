@@ -32,8 +32,8 @@ async function main() {
     });
     
     // Screen Setting
-    const screenWidth = 2560;
-    const screenHeight = 1440;
+    const screenWidth = canvas.width;
+    const screenHeight = canvas.height;
     const aspect = screenWidth / screenHeight;
 
     // Basic Setting
@@ -50,19 +50,21 @@ async function main() {
     const vertexSize = 16;
     const cpsWidth = 10;
     const cpsHeight = 10;
-    const offsetX = maxWidth / (cpsWidth - 1);
-    const offsetY = maxHeight / (cpsHeight - 1);
-
+    const offsetX = maxWidth * 2 / (cpsWidth - 1);
+    const offsetY = maxHeight * 2 / (cpsHeight - 1);
+    
     // TypedArrays
     // control points
     const controlPointUnitSize = 2 * 4;         // vec2<f32>
     const controlPointsSize = controlPointUnitSize * cpsHeight * cpsWidth;
-    const cpsTypedArray = new Int32Array(controlPointsSize / 4);
+    const cpsTypedArray = new Float32Array(controlPointsSize / 4);
+    
+    let cpsOffset = 0;
     for (let v = 0; v < cpsHeight; ++v) {
         for (let u = 0; u < cpsWidth; ++u) {
-            const cpsOffset = (v * cpsWidth + u) * (controlPointUnitSize / 4);
-
+            
             cpsTypedArray.set([-maxWidth + offsetX * u, -maxHeight + offsetY * v], cpsOffset);
+            cpsOffset += 2;
         }
     }
 
@@ -75,11 +77,11 @@ async function main() {
     for (let i = 0; i < knotNumbers; ++i) {
         knotArray[i] = i;
     }
-    const knotTypedArray = new Uint32Array(knotArray / 4);
+    const knotTypedArray = new Uint32Array(knotArray);
 
     // calculate domain knots
     const start = degree - 1;                       // domain start point
-    const end = knotTypedArray.length - degree;     // domain end point
+    const end = knotArray.length - degree;          // domain end point
     const domainNum = end - start + 1;              // domain knots number
 
     // draw points
@@ -88,16 +90,18 @@ async function main() {
     const drawPointsUnitSize = 2 * 4;           // vec2<f32>
     const drawPointsSize = drawPointsUnitSize * drawPointsNum;
 
+    const radius = 4;
     let theta = 0;
-    let radius = 4;
+    let dpsOffset = 0;
     const drawPointsArray = [];
     for (let i = 0; i < drawPointsNum; ++i) {
         theta = i * dTheta;
 
-        drawPointsArray[i] = [Number(radius * Math.cos(theta * Math.PI / 180)) * (domainNum - 1) + start,
-                              Number(radius * Math.sin(theta * Math.PI / 180)) * (domainNum - 1) + start];
+        drawPointsArray[i] = [Number((5 + radius * Math.cos(theta * Math.PI / 180)) / 10) * (domainNum - 1) + start,
+                              Number((5 + radius * Math.sin(theta * Math.PI / 180)) / 10) * (domainNum - 1) + start];
+        dpsOffset += 2;
     }
-    const drawPointsTypedArray = new Float32Array(drawPointsArray / 4);
+    const drawPointsTypedArray = new Float32Array(drawPointsArray.flat());
 
     // intervals
     const intervalArray = [];
@@ -115,7 +119,7 @@ async function main() {
             vInterval = findInterval(knotArray, drawPointsArray[i][1]);
         intervalArray[i] = [uInterval, vInterval];
     }
-    const intervalTypedArray = new Uint32Array(intervalArray / 4);
+    const intervalTypedArray = new Uint32Array(intervalArray.flat());  
 
     // uResult & tempCps size
     const uResultLength = drawPointsArray.length * cpsHeight;
@@ -125,7 +129,7 @@ async function main() {
     // Shader
     const vertexShaderModule = device.createShaderModule({
         label: 'B Spline Surface Vertex Module',
-        code: vertexShaderSrc(),
+        code: vertexShaderSrc(aspect),
     });
 
     const fragmentShaderModule = device.createShaderModule({
@@ -145,6 +149,15 @@ async function main() {
         layout: 'auto',
         vertex: {
             module: vertexShaderModule,
+            buffers: [
+                {
+                    arrayStride: 2 * 4, // 2 floats, 4 bytes each
+                    stepMode: 'instance',
+                    attributes: [
+                        { shaderLocation: 0, offset: 0, format: 'float32x2' },
+                    ],
+                },
+            ],
         },
         fragment: {
             module: fragmentShaderModule,
@@ -190,14 +203,14 @@ async function main() {
     
     const inputBuffer = device.createBuffer({
         label: 'compute shader input data buffer',
-        size: drawPointsNum * 4,
+        size: drawPointsSize,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
     device.queue.writeBuffer(inputBuffer, 0, drawPointsTypedArray);
 
     const intervalBuffer = device.createBuffer({
         label: 'uIntervals buffer',
-        size: drawPointsNum * 4,
+        size: drawPointsNum * 2 * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
     device.queue.writeBuffer(intervalBuffer, 0, intervalTypedArray);
@@ -206,6 +219,12 @@ async function main() {
         label: 'output buffer',
         size: drawPointsNum * 4 * 2,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+    });
+    
+    const computeResultBuffer = device.createBuffer({
+        label: 'computeResult buffer',
+        size: drawPointsNum * 4 * 2,
+        usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
     });
 
     const computeBindGroup = device.createBindGroup({
@@ -220,56 +239,18 @@ async function main() {
         ]
     });
 
-    // VS Uniform Buffers
-    const uniformTypedArray = new Float32Array(4);
-    uniformTypedArray.set([vertexSize, [screenWidth, screenHeight]]);
-    
-    const uniformBuffer = device.createBuffer({
-        label: 'uniform buffer',
-        size: uniformTypedArray.byteLength,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-
-    // VS Storage Buffers
-    const vertStorageBuffer = device.createBuffer({
-        label: 'vertices storage buffer',
+    // VS vertex buffer
+    const vertexBuffer = device.createBuffer({
+        label: 'vertex buffer',
         size: controlPointsSize + drawPointsNum * 4 * 2,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
 
-    const VSBindGroup = device.createBindGroup({
-        label: 'bindGroup for vertex shader',
-        layout: renderPipeline.getBindGroupLayout(0),
-        entries: [
-            { binding: 0, resource: { buffer: uniformBuffer }},
-            { binding: 1, resource: { buffer: vertStorageBuffer} },
-        ]
-    });
-
-    // canvas resize
-    const canvasToSizeMap = new WeakMap();
-
-    function resizeCanvasToDisplaySize(canvas) {
-        // Get the canvas's current display size
-        let { width, height } = canvasToSizeMap.get(canvas) || canvas;
-
-        // Make sure it's valid for WebGPU
-        width = Math.max(1, Math.min(width, device.limits.maxTextureDimension2D));
-        height = Math.max(1, Math.min(height, device.limits.maxTextureDimension2D));
-
-        // Only if the size is different, set the canvas size
-        const needResize = canvas.width !== width || canvas.height !== height;
-        if (needResize) {
-        canvas.width = width;
-        canvas.height = height;
-        }
-        return needResize;
-    }
-
-    function render() {
-        const encoder = device.createCommandEncoder({ label: "compute encoder" });
+    // Render
+    async function render() {
+        const encoder = device.createCommandEncoder({ label: "encoder" });
+        
         {
-            
             const computePass = encoder.beginComputePass({ label: "compute pass" });
 
             computePass.setPipeline(computePipeline);
@@ -277,34 +258,51 @@ async function main() {
             computePass.dispatchWorkgroups(1);
             computePass.end();
         }
-
+        
+        // copy compute shader results to map
+        encoder.copyBufferToBuffer(outputBuffer, 0, computeResultBuffer, 0, computeResultBuffer.size);
+        
+        // copy compute shader results to vertex buffer
+        encoder.copyBufferToBuffer(controlPointsBuffer, 0, vertexBuffer, 0, controlPointsSize);
+        encoder.copyBufferToBuffer(outputBuffer, 0, vertexBuffer, controlPointsSize, drawPointsNum * 4 * 2);
+        
         {
-            const encoder = device.createCommandEncoder({ label: "render encoder" });
-            encoder.copyBufferToBuffer(controlPointsBuffer, 0, vertStorageBuffer, 0, controlPointsSize);
-            encoder.copyBufferToBuffer(outputBuffer, 0, vertStorageBuffer, controlPointsSize, drawPointsNum * 4 * 2);
-
             renderPassDescriptor.colorAttachments[0].view = context.getCurrentTexture().createView();
             const renderPass = encoder.beginRenderPass(renderPassDescriptor);
 
             renderPass.setPipeline(renderPipeline);
-            renderPass.setBindGroup(0, VSBindGroup);
+            renderPass.setVertexBuffer(0, vertexBuffer);
             renderPass.draw(6, cpsWidth * cpsHeight + drawPointsNum);
             renderPass.end();
         }
         
         const commandBuffer = encoder.finish();
         device.queue.submit([commandBuffer]);
-    }
+        
+        // check compute shader output
+        await computeResultBuffer.mapAsync(GPUMapMode.READ);
+        const result = new Float32Array(computeResultBuffer.getMappedRange());
 
+        console.log('compute shader control points', cpsTypedArray);
+        console.log('compute shader knot points', knotTypedArray);
+        console.log('compute shader draw points', drawPointsTypedArray);
+        console.log('compute shader interaval points', intervalTypedArray);
+        console.log('compute shader result', result);
+
+        computeResultBuffer.unmap();
+    }
+    
     const observer = new ResizeObserver(entries => {
         for (const entry of entries) {
-          canvasToSizeMap.set(entry.target, {
-             width: entry.contentBoxSize[0].inlineSize,
-             height: entry.contentBoxSize[0].blockSize,
-          });
+            const canvas = entry.target;
+            const width = entry.contentBoxSize[0].inlineSize;
+            const height = entry.contentBoxSize[0].blockSize;
+            canvas.width = Math.max(1, Math.min(width, device.limits.maxTextureDimension2D));
+            canvas.height = Math.max(1, Math.min(height, device.limits.maxTextureDimension2D));
+            // re-render
+            render();
         }
-        render();
-      });
-      observer.observe(canvas);
+    });
+    observer.observe(canvas);
 }
 main();
