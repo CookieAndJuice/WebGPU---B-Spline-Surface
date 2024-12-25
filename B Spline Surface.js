@@ -36,6 +36,14 @@ async function main() {
     const screenHeight = canvas.height;
     const aspect = screenWidth / screenHeight;
 
+    // canvas mouse event
+    canvas.addEventListener("click", function (event) {
+        let mouseX = event.clientX / canvas.width - 0.5;
+        let mouseY = -(event.clientY / canvas.height - 0.5);
+
+        console.log("(" + mouseX + ", " + mouseY + ") is clicked.");
+    });
+    
     // Basic Setting
     const maxRange = 0.75;
     
@@ -47,7 +55,6 @@ async function main() {
         maxHeight = maxRange * aspect;
     
     // control points
-    const vertexSize = 16;
     const cpsWidth = 10;
     const cpsHeight = 10;
     const offsetX = maxWidth * 2 / (cpsWidth - 1);
@@ -221,11 +228,11 @@ async function main() {
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
     
-    const computeResultBuffer = device.createBuffer({
-        label: 'computeResult buffer',
-        size: drawPointsNum * 4 * 2,
-        usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
-    });
+    // const computeResultBuffer = device.createBuffer({
+    //     label: 'computeResult buffer',
+    //     size: drawPointsNum * 4 * 2,
+    //     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
+    // });
 
     const computeBindGroup = device.createBindGroup({
         label: 'bindGroup for compute shader',
@@ -260,7 +267,7 @@ async function main() {
         }
         
         // copy compute shader results to map
-        encoder.copyBufferToBuffer(outputBuffer, 0, computeResultBuffer, 0, computeResultBuffer.size);
+        // encoder.copyBufferToBuffer(outputBuffer, 0, computeResultBuffer, 0, computeResultBuffer.size);
         
         // copy compute shader results to vertex buffer
         encoder.copyBufferToBuffer(controlPointsBuffer, 0, vertexBuffer, 0, controlPointsSize);
@@ -280,16 +287,16 @@ async function main() {
         device.queue.submit([commandBuffer]);
         
         // check compute shader output
-        await computeResultBuffer.mapAsync(GPUMapMode.READ);
-        const result = new Float32Array(computeResultBuffer.getMappedRange());
+        // await computeResultBuffer.mapAsync(GPUMapMode.READ);
+        // const result = new Float32Array(computeResultBuffer.getMappedRange());
 
-        console.log('compute shader control points', cpsTypedArray);
-        console.log('compute shader knot points', knotTypedArray);
-        console.log('compute shader draw points', drawPointsTypedArray);
-        console.log('compute shader interaval points', intervalTypedArray);
-        console.log('compute shader result', result);
+        // console.log('compute shader control points', cpsTypedArray);
+        // console.log('compute shader knot points', knotTypedArray);
+        // console.log('compute shader draw points', drawPointsTypedArray);
+        // console.log('compute shader interaval points', intervalTypedArray);
+        // console.log('compute shader result', result);
 
-        computeResultBuffer.unmap();
+        // computeResultBuffer.unmap();
     }
     
     const observer = new ResizeObserver(entries => {

@@ -37,7 +37,7 @@ export function vertexShaderSrc(aspect)
             let aspect = ${aspect}f;
 
             var vsOut: VSOutput;
-            var resolution = vec2f(150, 150);
+            var resolution = vec2f(100, 100);
 
             if (aspect > 1)
             {
