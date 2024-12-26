@@ -1,5 +1,5 @@
 // Vertex Shader & Fragment Shader
-export function vertexShaderSrc(aspect)
+export function vertexShaderSrc(aspect, clickPoint, mouseDx, mouseDy)
 {
     return /*wgsl*/`
         struct Vertices {
@@ -15,7 +15,6 @@ export function vertexShaderSrc(aspect)
             @builtin(position) position: vec4f,
         };
 
-        // @group(0) @binding(0) var<storage> vert: array<Vertices>;
         @group(0) @binding(1) var<uniform> unif: Uniforms;
 
         @vertex fn vs(

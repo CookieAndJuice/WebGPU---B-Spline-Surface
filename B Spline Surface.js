@@ -36,12 +36,45 @@ async function main() {
     const screenHeight = canvas.height;
     const aspect = screenWidth / screenHeight;
 
-    // canvas mouse event
-    canvas.addEventListener("click", function (event) {
-        let mouseX = event.clientX / canvas.width - 0.5;
-        let mouseY = -(event.clientY / canvas.height - 0.5);
+    let drag = false;
+    let dragNow = { x: -100, y: -100 };
+    let dragEnd = { x: -100, y: -100 };
+    let dx = 0;
+    let dy = 0;
 
-        console.log("(" + mouseX + ", " + mouseY + ") is clicked.");
+    // canvas mouse event
+    canvas.addEventListener('mousedown', function(event) {
+        dragNow = {
+            x: event.clientX / canvas.width - 0.5,
+            y: -(event.clientY / canvas.height - 0.5)
+        }
+        drag = true;
+        console.log("now (" + dragNow.x + ", " + dragNow.y + ").");
+    });
+    
+    canvas.addEventListener('mousemove', function(event) {
+        if (drag) {
+            dragEnd = {
+                x: event.clientX / canvas.width - 0.5,
+                y: -(event.clientY / canvas.height - 0.5)
+            }
+
+            dx = dragEnd.x - dragNow.x;
+            dy = dragEnd.y - dragNow.y;
+            dragNow = dragEnd;
+            console.log("now (" + dragNow.x + ", " + dragNow.y + ").");
+        }
+    });
+
+    canvas.addEventListener('mouseup', function(event) {
+        if (drag)
+        {
+            dragEnd = {
+                x: -100,
+                y: -100
+            }
+            drag = false;
+        }
     });
     
     // Basic Setting
@@ -136,7 +169,7 @@ async function main() {
     // Shader
     const vertexShaderModule = device.createShaderModule({
         label: 'B Spline Surface Vertex Module',
-        code: vertexShaderSrc(aspect),
+        code: vertexShaderSrc(aspect, dragNow, dx, dy),
     });
 
     const fragmentShaderModule = device.createShaderModule({
