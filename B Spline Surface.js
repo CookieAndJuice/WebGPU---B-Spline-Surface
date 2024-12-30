@@ -14,6 +14,22 @@ function findInterval(knotList, point) {
     return returnIndex;
 }
 
+function testIntersection(control_points, resolution, clickPoint, dx, dy)
+{
+    for (let point of control_points)
+    {
+        if (point[0] - 1/resolution.x <= clickPoint.x && clickPoint.x <= point[0] + 1/resolution.x
+            && point[1] - 1/resolution.y <= clickPoint.y && clickPoint.y <= point[1] + 1/resolution.y)
+        {
+            console.log(`${point} box selected`);
+            console.log("now (" + dx + ", " + dy + ").");
+            point[0] += dx;
+            point[1] += dy;
+            return;
+        }
+    }
+}
+
 async function main() {  
     const adapter = await navigator.gpu?.requestAdapter();
     const device = await adapter?.requestDevice();
@@ -37,49 +53,74 @@ async function main() {
     const aspect = screenWidth / screenHeight;
 
     let drag = false;
-    let dragNow = { x: -100, y: -100 };
+    let clickPos = { x: -100, y: -100 };
+    let dragStart = { x: -100, y: -100 };
     let dragEnd = { x: -100, y: -100 };
-    let dx = 0;
-    let dy = 0;
+    let mouseDx = 0;
+    let mouseDy = 0;
 
     // canvas mouse event
     canvas.addEventListener('mousedown', function(event) {
-        dragNow = {
-            x: event.clientX / canvas.width - 0.5,
-            y: -(event.clientY / canvas.height - 0.5)
+        clickPos = {
+            x: event.clientX / canvas.width * 2 - 1,
+            y: -(event.clientY / canvas.height * 2 - 1)
+        }
+        dragStart = {
+            x: event.clientX / canvas.width * 2 - 1,
+            y: -(event.clientY / canvas.height * 2 - 1)
+        }
+        dragEnd = {
+            x: event.clientX / canvas.width * 2 - 1,
+            y: -(event.clientY / canvas.height * 2 - 1)
         }
         drag = true;
-        console.log("now (" + dragNow.x + ", " + dragNow.y + ").");
+        //console.log("now (" + clickPos.x + ", " + clickPos.y + ").");
+        
+        canvas.addEventListener('mousemove', HandleMouseMove);
+        canvas.addEventListener('mouseup', HandleMouseUp);
     });
     
-    canvas.addEventListener('mousemove', function(event) {
+    function HandleMouseMove(event) {
         if (drag) {
             dragEnd = {
-                x: event.clientX / canvas.width - 0.5,
-                y: -(event.clientY / canvas.height - 0.5)
+                x: event.clientX / canvas.width * 2 - 1,
+                y: -(event.clientY / canvas.height * 2 - 1)
             }
-
-            dx = dragEnd.x - dragNow.x;
-            dy = dragEnd.y - dragNow.y;
-            dragNow = dragEnd;
-            console.log("now (" + dragNow.x + ", " + dragNow.y + ").");
+            
+            mouseDx = dragEnd.x - dragStart.x;
+            mouseDy = dragEnd.y - dragStart.y;
+            dragStart = dragEnd;
+            testIntersection(controlPoints, resolution, clickPos, mouseDx, mouseDy);
+            // console.log("now (" + clickPos.x + ", " + clickPos.y + ").");
         }
-    });
-
-    canvas.addEventListener('mouseup', function(event) {
-        if (drag)
-        {
+    }
+    
+    function HandleMouseUp() {
+        if (drag) {
             dragEnd = {
                 x: -100,
                 y: -100
             }
+            dragStart = {
+                x: -100,
+                y: -100
+            }
+            mouseDx = 0;
+            mouseDy = 0;
             drag = false;
+            
+            canvas.removeEventListener('mousemove', HandleMouseMove);
+            canvas.removeEventListener('mouseup', HandleMouseUp);
         }
-    });
+    }
     
     // Basic Setting
     const maxRange = 0.75;
     
+    let resolution = {
+        x: 100,
+        y: 100,
+    };
     let maxWidth = maxRange;
     let maxHeight = maxRange;
     if (aspect > 1)
@@ -97,14 +138,12 @@ async function main() {
     // control points
     const controlPointUnitSize = 2 * 4;         // vec2<f32>
     const controlPointsSize = controlPointUnitSize * cpsHeight * cpsWidth;
-    const cpsTypedArray = new Float32Array(controlPointsSize / 4);
+    let controlPoints = [];
     
-    let cpsOffset = 0;
     for (let v = 0; v < cpsHeight; ++v) {
         for (let u = 0; u < cpsWidth; ++u) {
             
-            cpsTypedArray.set([-maxWidth + offsetX * u, -maxHeight + offsetY * v], cpsOffset);
-            cpsOffset += 2;
+            controlPoints.push([-maxWidth + offsetX * u, -maxHeight + offsetY * v]);
         }
     }
 
@@ -125,7 +164,7 @@ async function main() {
     const domainNum = end - start + 1;              // domain knots number
 
     // draw points
-    const dTheta = 12;
+    const dTheta = 5;
     const drawPointsNum = 360 / dTheta;
     const drawPointsUnitSize = 2 * 4;           // vec2<f32>
     const drawPointsSize = drawPointsUnitSize * drawPointsNum;
@@ -162,14 +201,14 @@ async function main() {
     const intervalTypedArray = new Uint32Array(intervalArray.flat());  
 
     // uResult & tempCps size
-    const uResultLength = drawPointsArray.length * cpsHeight;
+    const tempWidth = degree + 1; 
+    const uResultLength = drawPointsArray.length * tempWidth;
     const output_U_V_Offset = drawPointsArray.length;
-    const tempWidth = degree + 1;    
     
     // Shader
     const vertexShaderModule = device.createShaderModule({
         label: 'B Spline Surface Vertex Module',
-        code: vertexShaderSrc(aspect, dragNow, dx, dy),
+        code: vertexShaderSrc(aspect, resolution, cpsHeight * cpsWidth),
     });
 
     const fragmentShaderModule = device.createShaderModule({
@@ -194,7 +233,7 @@ async function main() {
                     arrayStride: 2 * 4, // 2 floats, 4 bytes each
                     stepMode: 'instance',
                     attributes: [
-                        { shaderLocation: 0, offset: 0, format: 'float32x2' },
+                        { shaderLocation: 0, offset: 0, format: 'float32x2' },  // position
                     ],
                 },
             ],
@@ -232,7 +271,6 @@ async function main() {
         size: controlPointsSize,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
-    device.queue.writeBuffer(controlPointsBuffer, 0, cpsTypedArray);
 
     const knotsBuffer = device.createBuffer({
         label: 'knots buffer',
@@ -250,20 +288,20 @@ async function main() {
 
     const intervalBuffer = device.createBuffer({
         label: 'uIntervals buffer',
-        size: drawPointsNum * 2 * 4,
+        size: drawPointsSize,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
     device.queue.writeBuffer(intervalBuffer, 0, intervalTypedArray);
 
     const outputBuffer = device.createBuffer({
         label: 'output buffer',
-        size: drawPointsNum * 4 * 2,
+        size: drawPointsSize,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
     
     // const computeResultBuffer = device.createBuffer({
     //     label: 'computeResult buffer',
-    //     size: drawPointsNum * 4 * 2,
+    //     size: drawPointsSize,
     //     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
     // });
 
@@ -279,10 +317,10 @@ async function main() {
         ]
     });
 
-    // VS vertex buffer
+    // VS input buffer    
     const vertexBuffer = device.createBuffer({
         label: 'vertex buffer',
-        size: controlPointsSize + drawPointsNum * 4 * 2,
+        size: controlPointsSize + drawPointsSize,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
 
@@ -294,6 +332,14 @@ async function main() {
             const computePass = encoder.beginComputePass({ label: "compute pass" });
 
             computePass.setPipeline(computePipeline);
+
+            if (drag)
+            {
+                
+            }
+            
+            const cpsTypedArray = new Float32Array(controlPoints.flat());
+            device.queue.writeBuffer(controlPointsBuffer, 0, cpsTypedArray);
             computePass.setBindGroup(0, computeBindGroup);
             computePass.dispatchWorkgroups(1);
             computePass.end();
@@ -304,7 +350,7 @@ async function main() {
         
         // copy compute shader results to vertex buffer
         encoder.copyBufferToBuffer(controlPointsBuffer, 0, vertexBuffer, 0, controlPointsSize);
-        encoder.copyBufferToBuffer(outputBuffer, 0, vertexBuffer, controlPointsSize, drawPointsNum * 4 * 2);
+        encoder.copyBufferToBuffer(outputBuffer, 0, vertexBuffer, controlPointsSize, drawPointsSize);
         
         {
             renderPassDescriptor.colorAttachments[0].view = context.getCurrentTexture().createView();
@@ -330,6 +376,8 @@ async function main() {
         // console.log('compute shader result', result);
 
         // computeResultBuffer.unmap();
+        
+        requestAnimationFrame(render);
     }
     
     const observer = new ResizeObserver(entries => {
@@ -339,8 +387,7 @@ async function main() {
             const height = entry.contentBoxSize[0].blockSize;
             canvas.width = Math.max(1, Math.min(width, device.limits.maxTextureDimension2D));
             canvas.height = Math.max(1, Math.min(height, device.limits.maxTextureDimension2D));
-            // re-render
-            render();
+            requestAnimationFrame(render);
         }
     });
     observer.observe(canvas);

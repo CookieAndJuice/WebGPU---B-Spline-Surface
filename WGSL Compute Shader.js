@@ -17,7 +17,7 @@ export function computeShaderSrc(degree, cpsWidth, cpsHeight, uResultLength, tem
         @group(0) @binding(4)
         var<storage, read_write> output: array<vec2f>;
 
-        @compute @workgroup_size(32)
+        @compute @workgroup_size(128)
         fn main(@builtin(global_invocation_id) global_invocation_id: vec3u)
         { 
             let degree = u32(${degree});
