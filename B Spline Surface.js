@@ -260,6 +260,9 @@ async function main() {
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
     
+    // github 2c7d497 버전의 문제점
+    // 1. testIntersection 함수는 clickPoint(맨 처음의 mouse down 이벤트 때의 좌표) 기준으로만 작동한다.
+    // 2. testIntersection 함수는 마우스 드래그 이벤트마다 호출되는데, 매 번 for문으로 control points를 탐색해서 연산량이 과했다.
     // canvas mouse drag values
     let drag = false;
     let clickPos = { x: -100, y: -100 };
