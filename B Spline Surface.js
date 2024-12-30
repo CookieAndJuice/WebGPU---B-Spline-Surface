@@ -14,20 +14,18 @@ function findInterval(knotList, point) {
     return returnIndex;
 }
 
-function testIntersection(control_points, resolution, clickPoint, dx, dy)
+function SelectControlPoint(control_points, resolution, clickPoint)
 {
-    for (let point of control_points)
+    for (let index = 0; index < control_points.length; index++)
     {
-        if (point[0] - 1/resolution.x <= clickPoint.x && clickPoint.x <= point[0] + 1/resolution.x
-            && point[1] - 1/resolution.y <= clickPoint.y && clickPoint.y <= point[1] + 1/resolution.y)
+        if (control_points[index][0] - 1 / resolution.x <= clickPoint.x && clickPoint.x <= control_points[index][0] + 1/resolution.x
+            && control_points[index][1] - 1 / resolution.y <= clickPoint.y && clickPoint.y <= control_points[index][1] + 1/resolution.y)
         {
-            console.log(`${point} box selected`);
-            console.log("now (" + dx + ", " + dy + ").");
-            point[0] += dx;
-            point[1] += dy;
-            return;
+            console.log(`${control_points[index]} box selected`);
+            return index;
         }
     }
+    return -1;
 }
 
 async function main() {  
@@ -51,68 +49,6 @@ async function main() {
     const screenWidth = canvas.width;
     const screenHeight = canvas.height;
     const aspect = screenWidth / screenHeight;
-
-    let drag = false;
-    let clickPos = { x: -100, y: -100 };
-    let dragStart = { x: -100, y: -100 };
-    let dragEnd = { x: -100, y: -100 };
-    let mouseDx = 0;
-    let mouseDy = 0;
-
-    // canvas mouse event
-    canvas.addEventListener('mousedown', function(event) {
-        clickPos = {
-            x: event.clientX / canvas.width * 2 - 1,
-            y: -(event.clientY / canvas.height * 2 - 1)
-        }
-        dragStart = {
-            x: event.clientX / canvas.width * 2 - 1,
-            y: -(event.clientY / canvas.height * 2 - 1)
-        }
-        dragEnd = {
-            x: event.clientX / canvas.width * 2 - 1,
-            y: -(event.clientY / canvas.height * 2 - 1)
-        }
-        drag = true;
-        //console.log("now (" + clickPos.x + ", " + clickPos.y + ").");
-        
-        canvas.addEventListener('mousemove', HandleMouseMove);
-        canvas.addEventListener('mouseup', HandleMouseUp);
-    });
-    
-    function HandleMouseMove(event) {
-        if (drag) {
-            dragEnd = {
-                x: event.clientX / canvas.width * 2 - 1,
-                y: -(event.clientY / canvas.height * 2 - 1)
-            }
-            
-            mouseDx = dragEnd.x - dragStart.x;
-            mouseDy = dragEnd.y - dragStart.y;
-            dragStart = dragEnd;
-            testIntersection(controlPoints, resolution, clickPos, mouseDx, mouseDy);
-            // console.log("now (" + clickPos.x + ", " + clickPos.y + ").");
-        }
-    }
-    
-    function HandleMouseUp() {
-        if (drag) {
-            dragEnd = {
-                x: -100,
-                y: -100
-            }
-            dragStart = {
-                x: -100,
-                y: -100
-            }
-            mouseDx = 0;
-            mouseDy = 0;
-            drag = false;
-            
-            canvas.removeEventListener('mousemove', HandleMouseMove);
-            canvas.removeEventListener('mouseup', HandleMouseUp);
-        }
-    }
     
     // Basic Setting
     const maxRange = 0.75;
@@ -323,6 +259,72 @@ async function main() {
         size: controlPointsSize + drawPointsSize,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
+    
+    // canvas mouse drag values
+    let drag = false;
+    let clickPos = { x: -100, y: -100 };
+    let dragStart = { x: -100, y: -100 };
+    let dragEnd = { x: -100, y: -100 };
+    let mouseDx = 0;
+    let mouseDy = 0;
+    let selectedPointIndex = -1;
+
+    // canvas mouse event
+    canvas.addEventListener('mousedown', function (event) {
+        clickPos = {
+            x: event.clientX / canvas.width * 2 - 1,
+            y: -(event.clientY / canvas.height * 2 - 1)
+        }
+        dragStart = {
+            x: event.clientX / canvas.width * 2 - 1,
+            y: -(event.clientY / canvas.height * 2 - 1)
+        }
+        dragEnd = {
+            x: event.clientX / canvas.width * 2 - 1,
+            y: -(event.clientY / canvas.height * 2 - 1)
+        }
+        drag = true;
+        selectedPointIndex = SelectControlPoint(controlPoints, resolution, clickPos);
+
+        canvas.addEventListener('mousemove', HandleMouseMove);
+        canvas.addEventListener('mouseup', HandleMouseUp);
+    });
+
+    function HandleMouseMove(event) {
+        if (drag && selectedPointIndex !== -1) {
+            dragEnd = {
+                x: event.clientX / canvas.width * 2 - 1,
+                y: -(event.clientY / canvas.height * 2 - 1)
+            }
+
+            mouseDx = dragEnd.x - dragStart.x;
+            mouseDy = dragEnd.y - dragStart.y;
+            dragStart = dragEnd;
+
+            controlPoints[selectedPointIndex][0] += mouseDx;
+            controlPoints[selectedPointIndex][1] += mouseDy;
+        }
+    }
+
+    function HandleMouseUp() {
+        if (drag) {
+            dragEnd = {
+                x: -100,
+                y: -100
+            }
+            dragStart = {
+                x: -100,
+                y: -100
+            }
+            mouseDx = 0;
+            mouseDy = 0;
+            drag = false;
+            selectedPointIndex = -1;
+
+            canvas.removeEventListener('mousemove', HandleMouseMove);
+            canvas.removeEventListener('mouseup', HandleMouseUp);
+        }
+    }
 
     // Render
     async function render() {
@@ -332,11 +334,6 @@ async function main() {
             const computePass = encoder.beginComputePass({ label: "compute pass" });
 
             computePass.setPipeline(computePipeline);
-
-            if (drag)
-            {
-                
-            }
             
             const cpsTypedArray = new Float32Array(controlPoints.flat());
             device.queue.writeBuffer(controlPointsBuffer, 0, cpsTypedArray);
