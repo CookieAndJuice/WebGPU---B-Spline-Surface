@@ -1,6 +1,7 @@
 import { vertexShaderSrc } from './WGSL VS_FS.js';
 import { fragmentShaderSrc } from './WGSL VS_FS.js';
 import { computeShaderSrc } from './WGSL Compute Shader.js';
+import { vertexShaderIdSrc } from './WGSL Pick VS_FS.js';
 
 function findInterval(knotList, point) {
     let returnIndex = 0;
@@ -14,18 +15,75 @@ function findInterval(knotList, point) {
     return returnIndex;
 }
 
-function SelectControlPoint(control_points, resolution, clickPoint)
+// function SelectControlPoint(control_points, resolution, clickPoint)
+// {
+//     for (let index = 0; index < control_points.length; index++)
+//     {
+//         if (control_points[index][0] - 1 / resolution.x <= clickPoint.x && clickPoint.x <= control_points[index][0] + 1/resolution.x
+//             && control_points[index][1] - 1 / resolution.y <= clickPoint.y && clickPoint.y <= control_points[index][1] + 1/resolution.y)
+//         {
+//             console.log(`${control_points[index]} box selected`);
+//             return index;
+//         }
+//     }
+//     return -1;
+// }
+
+function render_object_id(device, renderPass, uniformId, bindGroupId, controlPoints, idVertexBuffer, index)
 {
-    for (let index = 0; index < control_points.length; index++)
+    device.queue.writeBuffer(idVertexBuffer, 0, controlPoints);
+    let id = new Float32Array([index / 255.0]);
+    device.queue.writeBuffer(uniformId, 0, id);
+
+    renderPass.setVertexBuffer(0, idVertexBuffer);
+    renderPass.setBindGroup(0, bindGroupId);
+    renderPass.draw(6, controlPoints.length/2);
+}
+
+async function SelectControlPoint(device, pipelineId, idVertexBuffer, idRenderTexture, bufferPicking, uniformId, bindGroupId, control_points, clickPoint)
+{
+    const encoder = device.createCommandEncoder();
+    const renderPass = encoder.beginRenderPass({
+        label: "rener pass to render id",
+        colorAttachments: [{
+            view: idRenderTexture.createView(),
+            loadOp: "clear",
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+            storeOp: "store",
+        }],
+    });
+
+    renderPass.setPipeline(pipelineId);
+    for (let i = 0; i < control_points.length/2; i++)
     {
-        if (control_points[index][0] - 1 / resolution.x <= clickPoint.x && clickPoint.x <= control_points[index][0] + 1/resolution.x
-            && control_points[index][1] - 1 / resolution.y <= clickPoint.y && clickPoint.y <= control_points[index][1] + 1/resolution.y)
-        {
-            console.log(`${control_points[index]} box selected`);
-            return index;
-        }
+        render_object_id(device, renderPass, uniformId, bindGroupId, control_points, idVertexBuffer, i);
     }
-    return -1;
+    renderPass.end();
+
+    encoder.copyTextureToBuffer(
+        {
+            texture: idRenderTexture,
+            origin: [clickPoint.x, clickPoint.y]
+        },
+        {
+            buffer: bufferPicking,
+        },
+        {
+            width: 1,
+        },
+    );
+
+    const commandBuffer = encoder.finish();
+    device.queue.submit([commandBuffer]);
+
+    await bufferPicking.mapAsync(GPUMapMode.READ);
+
+    // 2024/11/14 The following line doesn't work without slide()...
+    const pixel = new Uint8Array(bufferPicking.getMappedRange().slice());
+    console.log(`pixel : ${pixel}`);
+    bufferPicking.unmap();
+
+    return pixel[0];
 }
 
 async function main() {  
@@ -82,6 +140,7 @@ async function main() {
             controlPoints.push([-maxWidth + offsetX * u, -maxHeight + offsetY * v]);
         }
     }
+    const cpsTypedArray = new Float32Array(controlPoints.flat());
 
     // degree
     const degree = 3;
@@ -152,6 +211,11 @@ async function main() {
         code: fragmentShaderSrc(),
     });
 
+    const idVertexShaderModule = device.createShaderModule({
+        label: 'Id Vertex Shader Module',
+        code: vertexShaderIdSrc(aspect, resolution, cpsHeight * cpsWidth),
+    });
+    
     const computeShaderModule = device.createShaderModule({
         label: 'B Spline Surface Compute Module',
         code: computeShaderSrc(degree, cpsWidth, cpsHeight, uResultLength, tempWidth),
@@ -177,6 +241,29 @@ async function main() {
         fragment: {
             module: fragmentShaderModule,
             targets: [{ format: presentationFormat }],
+        },
+    });
+    
+    const idRenderPipeline = device.createRenderPipeline({
+        label: 'Id Render Pipeline',
+        layout: 'auto',
+        vertex: {
+            module: idVertexShaderModule,
+            entryPoint: 'vs',
+            buffers: [
+                {
+                    arrayStride: 2 * 4, // 2 floats, 4 bytes each
+                    stepMode: 'instance',
+                    attributes: [
+                        { shaderLocation: 0, offset: 0, format: 'float32x2' },  // position
+                    ],
+                },
+            ],
+        },
+        fragment: {
+            module: idVertexShaderModule,
+            entryPoint: 'fs',
+            targets: [{ format: 'r8unorm' }],
         },
     });
 
@@ -260,6 +347,39 @@ async function main() {
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
     
+    // picking Id buffer
+    const idVertexBuffer = device.createBuffer({
+        label: 'id vertex buffer',
+        size: controlPointsSize,
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+    
+    const bufferPicking = device.createBuffer({
+        label: "buffer to read the pixel at the mouse location",
+        size: 4,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+
+    const idRenderTexture = device.createTexture({
+        //                    size:[canvasTexture.width, canvasTexture.height],
+        size: [1, 1],
+        format: 'r8unorm',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+    });
+    
+    const uniformId = device.createBuffer({
+        label: 'uniform buffer for id rendering',
+        size: 4 * 4,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    
+    const bindGroupId = device.createBindGroup({
+        layout: idRenderPipeline.getBindGroupLayout(0),
+        entries: [
+            { binding: 0, resource: { buffer: uniformId } },
+        ],
+    });
+    
     // github 2c7d497 버전의 문제점
     // 1. testIntersection 함수는 clickPoint(맨 처음의 mouse down 이벤트 때의 좌표) 기준으로만 작동한다.
     // 2. testIntersection 함수는 마우스 드래그 이벤트마다 호출되는데, 매 번 for문으로 control points를 탐색해서 연산량이 과했다.
@@ -273,7 +393,7 @@ async function main() {
     let selectedPointIndex = -1;
 
     // canvas mouse event
-    canvas.addEventListener('mousedown', function (event) {
+    canvas.addEventListener('mousedown', async function (event) {
         clickPos = {
             x: event.clientX / canvas.width * 2 - 1,
             y: -(event.clientY / canvas.height * 2 - 1)
@@ -286,8 +406,9 @@ async function main() {
             x: event.clientX / canvas.width * 2 - 1,
             y: -(event.clientY / canvas.height * 2 - 1)
         }
+        
         drag = true;
-        selectedPointIndex = SelectControlPoint(controlPoints, resolution, clickPos);
+        selectedPointIndex = SelectControlPoint(device, idRenderPipeline, idVertexBuffer, idRenderTexture, bufferPicking, uniformId, bindGroupId, cpsTypedArray, clickPos);
 
         canvas.addEventListener('mousemove', HandleMouseMove);
         canvas.addEventListener('mouseup', HandleMouseUp);
@@ -304,8 +425,8 @@ async function main() {
             mouseDy = dragEnd.y - dragStart.y;
             dragStart = dragEnd;
 
-            controlPoints[selectedPointIndex][0] += mouseDx;
-            controlPoints[selectedPointIndex][1] += mouseDy;
+            cpsTypedArray[selectedPointIndex * 2 + 0] += mouseDx;
+            cpsTypedArray[selectedPointIndex * 2 + 1] += mouseDy;
         }
     }
 
@@ -338,7 +459,6 @@ async function main() {
 
             computePass.setPipeline(computePipeline);
             
-            const cpsTypedArray = new Float32Array(controlPoints.flat());
             device.queue.writeBuffer(controlPointsBuffer, 0, cpsTypedArray);
             computePass.setBindGroup(0, computeBindGroup);
             computePass.dispatchWorkgroups(1);
