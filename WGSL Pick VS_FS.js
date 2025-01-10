@@ -1,15 +1,17 @@
 // Vertex Shader & Fragment Shader
-export function vertexShaderIdSrc(aspect, resolution, controlPointsNum) {
+export function ShaderIdSrc(aspect, resolution) {
     return /*wgsl*/`
         struct Vertices {
             @location(0) position: vec2f,
+            @location(1) id: f32,
         };
-    
+
         struct VSOutput {
             @builtin(position) position: vec4f,
+            @location(0) color: vec4f,
         };
-        
-        @group(0) @binding(0) var<uniform> uniformId: f32;
+
+        @group(0) @binding(0) var<uniform> uniformMVP: mat3x3f;
 
         @vertex fn vs(
             @builtin(vertex_index) vIndex: u32,
@@ -42,14 +44,18 @@ export function vertexShaderIdSrc(aspect, resolution, controlPointsNum) {
                 resolution = vec2f(resolution.x, resolution.y / aspect);
             }
 
+            var tempPosition = uniformMVP * vec3f(centerPoint, 1);
+            centerPoint = tempPosition.xy;
+            
             vsOut.position = vec4f(centerPoint + boxPos / resolution, 0, 1);
+            vsOut.color = vec4f(vec3(vertex.id), 1);
             
             return vsOut;
         }
         
-        @fragment fn fs() -> @location(0) vec4f
+        @fragment fn fs(fsInput: VSOutput) -> @location(0) vec4f
         {
-            return vec4f(vec3(uniformId), 1);
+            return fsInput.color;
         }
     `;
 }
