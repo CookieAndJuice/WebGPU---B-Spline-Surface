@@ -127,7 +127,7 @@ async function main() {
     const offsetY = maxHeight * 2 / (cpsHeight - 1);
     
     // TypedArrays
-    // control points
+    // control points - positions in NDC for 2d
     const controlPointUnitSize = 2 * 4;         // vec2<f32>
     const controlPointsSize = controlPointUnitSize * cpsHeight * cpsWidth;
     let controlPoints = [];

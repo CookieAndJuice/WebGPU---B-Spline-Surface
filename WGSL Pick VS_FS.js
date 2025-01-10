@@ -15,7 +15,6 @@ export function ShaderIdSrc(aspect, resolution) {
 
         @vertex fn vs(
             @builtin(vertex_index) vIndex: u32,
-            @builtin(instance_index) instanceIndex: u32,
             vertex: Vertices
         ) -> VSOutput
         {
