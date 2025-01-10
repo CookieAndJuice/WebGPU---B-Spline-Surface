@@ -1,2 +1,2 @@
-# WebGPU---B-Spline-Surface
+# WebGPU - B Spline Surface
 B Spline Surface using WebGPU
