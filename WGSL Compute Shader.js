@@ -35,11 +35,11 @@ export function computeShaderSrc(degree, cpsWidth, cpsHeight, uResultLength, tem
             // u 방향 계산 (계산 순서 : u 하나에 대해 모든 높이 계산 -> 다음 u 계산)
             let yOffset = cpsWidth;                                     // 높이값 넘어갈 때 offset
             
-            for (var height = 0u; height < ${tempWidth}; height++)
+            for (var height = 0u; height < tempWidth; height++)
             {
                 let nowPos = (height + vInterval - degree + 1) * yOffset + (uInterval - degree + 1);        // iInitial - 1
                 var tempCps: array<vec2<f32>, ${tempWidth}>;                          // 계산값 임시 저장 리스트
-                for(var num = 0u; num < ${tempWidth}; num++)
+                for(var num = 0u; num < tempWidth; num++)
                 {
                     tempCps[num] = control_points[nowPos + num];
                 }
@@ -64,7 +64,7 @@ export function computeShaderSrc(degree, cpsWidth, cpsHeight, uResultLength, tem
             
             let nowPos = index * xOffset;               // 계산값 임시 저장 리스트
             var vTempCps: array<vec2<f32>, ${tempWidth}>;
-            for(var num = 0u; num < ${tempWidth}; num++)
+            for(var num = 0u; num < tempWidth; num++)
             {
                 vTempCps[num] = uResult[nowPos + num];
             }
