@@ -487,7 +487,7 @@ async function main() {
             
             device.queue.writeBuffer(controlPointsBuffer, 0, cpsTypedArray);
             computePass.setBindGroup(0, computeBindGroup);
-            computePass.dispatchWorkgroups(1);
+            computePass.dispatchWorkgroups(4, 4, 5);
             computePass.end();
         }
         

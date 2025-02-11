@@ -13,15 +13,29 @@ export function computeShaderSrc(degree, cpsWidth, cpsHeight, uResultLength) {
         @group(0) @binding(3)
         var<storage, read_write> output: array<vec2f>;
 
-        @compute @workgroup_size(128)
-        fn main(@builtin(global_invocation_id) global_invocation_id: vec3u)
-        { 
+        @compute @workgroup_size(64)
+        fn main(
+            @builtin(workgroup_id) workgroup_id : vec3<u32>,
+            @builtin(local_invocation_id) local_invocation_id : vec3<u32>,
+            @builtin(global_invocation_id) global_invocation_id : vec3<u32>,
+            @builtin(local_invocation_index) local_invocation_index: u32,
+            @builtin(num_workgroups) num_workgroups: vec3<u32>)
+        {
+            let workgroup_index =
+                workgroup_id.x +
+                workgroup_id.y * num_workgroups.x +
+                workgroup_id.z * num_workgroups.x * num_workgroups.y;
+                
+            let global_invocation_index =
+                workgroup_index * (4 * 4 * 5) +
+                local_invocation_index;
+            
             let degree = u32(${degree});
             let cpsWidth = u32(${cpsWidth});
             let cpsHeight = u32(${cpsHeight});
             let cpsNum = u32(${cpsWidth});
             var uResult: array<vec2<f32>, ${uResultLength}>;
-            let index = global_invocation_id.x;
+            let index = global_invocation_index;
             
             // de Boor Algorithm
             let tempWidth = degree + 1;
