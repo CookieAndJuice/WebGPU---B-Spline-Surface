@@ -1,5 +1,5 @@
 // compute_shader
-export function computeShaderSrc(degree, cpsWidth, cpsHeight, uResultLength) {
+export function computeShaderSrc(degree, cpsWidth, cpsHeight, tempWidth) {
     return /* wgsl */`
         @group(0) @binding(0)
         var<storage, read> control_points: array<vec2f>;
@@ -16,8 +16,6 @@ export function computeShaderSrc(degree, cpsWidth, cpsHeight, uResultLength) {
         @compute @workgroup_size(64)
         fn main(
             @builtin(workgroup_id) workgroup_id : vec3<u32>,
-            @builtin(local_invocation_id) local_invocation_id : vec3<u32>,
-            @builtin(global_invocation_id) global_invocation_id : vec3<u32>,
             @builtin(local_invocation_index) local_invocation_index: u32,
             @builtin(num_workgroups) num_workgroups: vec3<u32>)
         {
@@ -27,18 +25,18 @@ export function computeShaderSrc(degree, cpsWidth, cpsHeight, uResultLength) {
                 workgroup_id.z * num_workgroups.x * num_workgroups.y;
                 
             let global_invocation_index =
-                workgroup_index * (4 * 4 * 5) +
+                workgroup_index * 64 +
                 local_invocation_index;
             
             let degree = u32(${degree});
             let cpsWidth = u32(${cpsWidth});
             let cpsHeight = u32(${cpsHeight});
             let cpsNum = u32(${cpsWidth});
-            var uResult: array<vec2<f32>, ${uResultLength}>;
+            let tempWidth = u32(${tempWidth});
+            var uResult: array<vec2<f32>, ${tempWidth}>;
             let index = global_invocation_index;
             
             // de Boor Algorithm
-            let tempWidth = degree + 1;
             let uInterval = intervals[index].x;
             let vInterval = intervals[index].y;
             
@@ -66,14 +64,12 @@ export function computeShaderSrc(degree, cpsWidth, cpsHeight, uResultLength) {
                         third * control_points[nowPos + 2] +
                         fourth * control_points[nowPos + 3];
                 
-                uResult[index * tempWidth + height] = uPoint;
+                uResult[height] = uPoint;
             }
             
             // v 방향 계산
             let xOffset = tempWidth;                    // 너비값 넘어갈 때 offset
             let vInput = inputs[index].y;
-            
-            let nowPos = index * xOffset;               // iInitial - 1
             
             first = (f32(vInterval) + 1 - vInput) * (f32(vInterval) + 1 - vInput) * (f32(vInterval) + 1 - vInput) / 6;
             second = ((vInput - f32(vInterval) + 2) * (f32(vInterval) + 1 - vInput) * (f32(vInterval) + 1 - vInput) +
@@ -85,10 +81,10 @@ export function computeShaderSrc(degree, cpsWidth, cpsHeight, uResultLength) {
             fourth = (vInput - f32(vInterval)) * (vInput - f32(vInterval)) * (vInput - f32(vInterval)) / 6;
             
             var vPoint: vec2<f32>;
-            vPoint = first * uResult[nowPos] +
-                    second * uResult[nowPos + 1] +
-                    third * uResult[nowPos + 2] +
-                    fourth * uResult[nowPos + 3];
+            vPoint = first * uResult[0] +
+                    second * uResult[1] +
+                    third * uResult[2] +
+                    fourth * uResult[3];
             
             output[index] = vPoint;
         }

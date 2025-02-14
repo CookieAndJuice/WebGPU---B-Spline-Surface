@@ -163,7 +163,7 @@ async function main() {
     const domainNum = end - start + 1;              // domain knots number
 
     // draw points
-    const dTheta = 5;
+    const dTheta = 2;
     const drawPointsNum = 360 / dTheta;
     const drawPointsUnitSize = 2 * 4;           // vec2<f32>
     const drawPointsSize = drawPointsUnitSize * drawPointsNum;
@@ -494,7 +494,7 @@ async function main() {
             
             device.queue.writeBuffer(controlPointsBuffer, 0, cpsTypedArray);
             computePass.setBindGroup(0, computeBindGroup);
-            computePass.dispatchWorkgroups(1);
+            computePass.dispatchWorkgroups(80);
             computePass.end();
         }
         

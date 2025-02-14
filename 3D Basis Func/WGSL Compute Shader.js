@@ -1,5 +1,5 @@
 // compute_shader
-export function computeShaderSrc(degree, cpsWidthX, cpsHeightY, cpsWidthZ, xResultLength, zResultLength, tempWidth)
+export function computeShaderSrc(degree, cpsWidthX, cpsHeightY, cpsWidthZ, xResultLength, tempWidth)
 {
     return /* wgsl */`
         @group(0) @binding(0)
@@ -17,8 +17,6 @@ export function computeShaderSrc(degree, cpsWidthX, cpsHeightY, cpsWidthZ, xResu
         @compute @workgroup_size(64)
         fn main(
             @builtin(workgroup_id) workgroup_id : vec3<u32>,
-            @builtin(local_invocation_id) local_invocation_id : vec3<u32>,
-            @builtin(global_invocation_id) global_invocation_id : vec3<u32>,
             @builtin(local_invocation_index) local_invocation_index: u32,
             @builtin(num_workgroups) num_workgroups: vec3<u32>)
         {
@@ -28,19 +26,19 @@ export function computeShaderSrc(degree, cpsWidthX, cpsHeightY, cpsWidthZ, xResu
                 workgroup_id.z * num_workgroups.x * num_workgroups.y;
 
             let global_invocation_index =
-                workgroup_index * (4 * 4 * 5) +
+                workgroup_index * 64 +
                 local_invocation_index;
             
             let degree = u32(${degree});
             let cpsWidthX = u32(${cpsWidthX});
             let cpsHeightY = u32(${cpsHeightY});
             let cpsWidthZ = u32(${cpsWidthZ});
+            let tempWidth = u32(${tempWidth});
             var xResult: array<vec3f, ${xResultLength}>;
-            var zResult: array<vec3f, ${zResultLength}>;
+            var zResult: array<vec3f, ${tempWidth}>;
             let index = global_invocation_index;
             
             // De Boor Algorithm Start
-            let tempWidth = degree + 1;
             let xInterval = intervals[index].x;
             let yInterval = intervals[index].y;
             let zInterval = intervals[index].z;
@@ -79,7 +77,7 @@ export function computeShaderSrc(degree, cpsWidthX, cpsHeightY, cpsWidthZ, xResu
                             third * control_points[nowPos + 2] +
                             fourth * control_points[nowPos + 3];
                     
-                    xResult[index * tempWidth * tempWidth + heightY * tempWidth + widthZ] = xPoint;
+                    xResult[heightY * tempWidth + widthZ] = xPoint;
                 }
             }
             
@@ -92,7 +90,7 @@ export function computeShaderSrc(degree, cpsWidthX, cpsHeightY, cpsWidthZ, xResu
             {
                 // iInitial - 1
                 // y-axis nowPos, z-axis nowpos, x-axis nowPos
-                let nowPos = index * tempWidth * tempWidth + heightY * tempWidth;
+                let nowPos = heightY * tempWidth;
                 
                 first = (f32(zInterval) + 1 - zInput) * (f32(zInterval) + 1 - zInput) * (f32(zInterval) + 1 - zInput) / 6;
                 second = ((zInput - f32(zInterval) + 2) * (f32(zInterval) + 1 - zInput) * (f32(zInterval) + 1 - zInput) +
@@ -109,13 +107,11 @@ export function computeShaderSrc(degree, cpsWidthX, cpsHeightY, cpsWidthZ, xResu
                         third * xResult[nowPos + 2] +
                         fourth * xResult[nowPos + 3];
                 
-                zResult[index * tempWidth + heightY] = zPoint;
+                zResult[heightY] = zPoint;
             }
             
             // y axis calculation
             let yInput = inputs[index].y;
-            
-            let nowPos = index * tempWidth;               // 계산값 임시 저장 리스트
             
             first = (f32(yInterval) + 1 - yInput) * (f32(yInterval) + 1 - yInput) * (f32(yInterval) + 1 - yInput) / 6;
             second = ((yInput - f32(yInterval) + 2) * (f32(yInterval) + 1 - yInput) * (f32(yInterval) + 1 - yInput) +
@@ -127,10 +123,10 @@ export function computeShaderSrc(degree, cpsWidthX, cpsHeightY, cpsWidthZ, xResu
             fourth = (yInput - f32(yInterval)) * (yInput - f32(yInterval)) * (yInput - f32(yInterval)) / 6;
             
             var yPoint: vec3f;
-            yPoint = first * zResult[nowPos] +
-                    second * zResult[nowPos + 1] +
-                    third * zResult[nowPos + 2] +
-                    fourth * zResult[nowPos + 3];
+            yPoint = first * zResult[0] +
+                    second * zResult[1] +
+                    third * zResult[2] +
+                    fourth * zResult[3];
             
             output[index] = yPoint;
         }

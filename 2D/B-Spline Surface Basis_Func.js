@@ -200,7 +200,6 @@ async function main() {
 
     // uResult & tempCps size
     const tempWidth = degree + 1; 
-    const uResultLength = drawPointsArray.length * tempWidth;
     const output_U_V_Offset = drawPointsArray.length;
     
     // Shader
@@ -221,7 +220,7 @@ async function main() {
     
     const computeShaderModule = device.createShaderModule({
         label: 'B Spline Surface Compute Module',
-        code: computeShaderSrc(degree, cpsWidth, cpsHeight, uResultLength),
+        code: computeShaderSrc(degree, cpsWidth, cpsHeight, tempWidth),
     });
 
     // Pipeline
@@ -487,7 +486,7 @@ async function main() {
             
             device.queue.writeBuffer(controlPointsBuffer, 0, cpsTypedArray);
             computePass.setBindGroup(0, computeBindGroup);
-            computePass.dispatchWorkgroups(4, 4, 5);
+            computePass.dispatchWorkgroups(80);
             computePass.end();
         }
         
