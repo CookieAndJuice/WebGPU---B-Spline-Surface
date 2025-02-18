@@ -4,7 +4,7 @@ import { computeShaderSrc } from './WGSL Compute Shader.js';
 import { ShaderIdSrc } from './WGSL Pick VS_FS.js';
 import *as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { vec2, vec3, vec4, mat3, utils } from 'wgpu-matrix';
+import { vec2, vec3, vec4, mat3, mat4, utils } from 'wgpu-matrix';
 
 function findInterval(knotList, point) {
     let returnIndex = 0;
@@ -119,13 +119,12 @@ async function main() {
     // Screen Setting
     const screenWidth = canvas.width;
     const screenHeight = canvas.height;
-    const aspect = screenWidth / screenHeight;
     
     // Basic Setting
     let sizeRatio = {
-        x: 100,
-        y: 100,
-        z: 100
+        x: 7,
+        y: 7,
+        z: 7
     };
     
     // load model file
@@ -135,14 +134,14 @@ async function main() {
     // TypedArrays
     // control points - positions in 3D object space 
     const cpsWidthX = 5;
-    const cpsHeightY = 5;
-    const cpsWidthZ = 5;
+    const cpsWidthY = 5;
+    const cpsHeightZ = 5;
     
     const offset = 10;
     let controlPoints = [];
 
-    for (let y = 0; y < cpsHeightY; ++y) {
-        for (let z = 0; z < cpsWidthZ; ++z) {
+    for (let z = 0; z < cpsHeightZ; ++z) {
+        for (let y = 0; y < cpsWidthY; ++y) {
             for (let x = 0; x < cpsWidthX; ++x)
             {
                 controlPoints.push([-offset + offset * x, -offset + offset * y, -offset + offset * z]);
@@ -168,7 +167,6 @@ async function main() {
     for (let i = 0; i < knotNumbers; ++i) {
         knotArray[i] = i;
     }
-    const knotTypedArray = new Uint32Array(knotArray);
 
     // calculate domain knots
     const start = degree - 1;                       // domain start point
@@ -177,26 +175,25 @@ async function main() {
 
     // draw points
     const spherePointsArray = SphereObject.geometry.attributes.position.array;  // -1 ~ 1
+    const sphereIndicesArray = SphereObject.geometry.index.array;
     const sphereNormalsArray = SphereObject.geometry.attributes.normal.array;
-    const sphereUVsArray = SphereObject.geometry.attributes.uv.array;
     
     const drawPointsNum = spherePointsArray.length / 3;
     const drawPointsUnitSize = 3 * 4;           // vec3<f32>
     const drawPointsSize = drawPointsUnitSize * drawPointsNum;
 
-    let dpsOffset = 0;
+    let dpsOffset = 3;
     let x = 0, y = 0, z = 0;
     const drawPointsArray = [];
     for (let i = 0; i < drawPointsNum; ++i) {
         x = spherePointsArray[i * dpsOffset + 0];
         y = spherePointsArray[i * dpsOffset + 1];
         z = spherePointsArray[i * dpsOffset + 2];
-                              
+        
         drawPointsArray[i] = [(x + 1) / 2 * (domainNum - 1) + start, (y + 1) / 2 * (domainNum - 1) + start, (z + 1) / 2 * (domainNum - 1) + start];
-        dpsOffset += 3;
     }
     const drawPointsTypedArray = new Float32Array(drawPointsArray.flat());
-
+    
     // intervals
     const intervalArray = [];
     let xInterval = 0;
@@ -229,7 +226,7 @@ async function main() {
     // Shader
     const vertexShaderModule = device.createShaderModule({
         label: 'B Spline Surface Vertex Module',
-        code: vertexShaderSrc(aspect, sizeRatio, cpsHeightY * cpsWidthX),
+        code: vertexShaderSrc(sizeRatio),
     });
 
     const fragmentShaderModule = device.createShaderModule({
@@ -237,14 +234,14 @@ async function main() {
         code: fragmentShaderSrc(),
     });
 
-    const idShaderModule = device.createShaderModule({
-        label: 'Id Vertex Shader Module',
-        code: ShaderIdSrc(aspect, sizeRatio, cpsHeightY * cpsWidthX),
-    });
+    // const idShaderModule = device.createShaderModule({
+    //     label: 'Id Vertex Shader Module',
+    //     code: ShaderIdSrc(sizeRatio),
+    // });
     
     const computeShaderModule = device.createShaderModule({
         label: 'B Spline Surface Compute Module',
-        code: computeShaderSrc(degree, cpsWidthX, cpsHeightY, cpsWidthZ, xResultLength, tempWidth),
+        code: computeShaderSrc(degree, cpsWidthX, cpsWidthY, cpsHeightZ, xResultLength, tempWidth),
     });
 
     // Pipeline
@@ -257,48 +254,63 @@ async function main() {
             buffers: [
                 {
                     arrayStride: 3 * 4, // 3 floats, 4 bytes each
-                    stepMode: 'instance',
+                    stepMode: 'vertex',
                     attributes: [
                         { shaderLocation: 0, offset: 0, format: 'float32x3' },  // position
                     ],
                 },
+                // {
+                //     arrayStride: 3 * 4, // 3 floats, 4 bytes each
+                //     stepMode: 'vertex',
+                //     attributes: [
+                //         { shaderLocation: 1, offset: 0, format: 'float32x3' },  // normal
+                //     ],
+                // },
             ],
         },
         fragment: {
             module: fragmentShaderModule,
             targets: [{ format: presentationFormat }],
         },
+        primitive: {
+            cullMode: 'back',
+        },
+        depthStencil: {
+            depthWriteEnabled: true,
+            depthCompare: 'less',
+            format: 'depth24plus',
+        }
     });
     
-    const idRenderPipeline = device.createRenderPipeline({
-        label: 'Id Render Pipeline',
-        layout: 'auto',
-        vertex: {
-            module: idShaderModule,
-            entryPoint: 'vs',
-            buffers: [
-                {
-                    arrayStride: 3 * 4, // 2 floats, 4 bytes each
-                    stepMode: 'instance',
-                    attributes: [
-                        { shaderLocation: 0, offset: 0, format: 'float32x3' },  // position
-                    ],
-                },
-                {
-                    arrayStride: 1 * 4, // 1 floats, 4bytes each
-                    stepMode: 'instance',
-                    attributes: [
-                        { shaderLocation: 1, offset: 0, format: 'float32' },    // id
-                    ]
-                }
-            ],
-        },
-        fragment: {
-            module: idShaderModule,
-            entryPoint: 'fs',
-            targets: [{ format: 'r8unorm' }],
-        },
-    });
+    // const idRenderPipeline = device.createRenderPipeline({
+    //     label: 'Id Render Pipeline',
+    //     layout: 'auto',
+    //     vertex: {
+    //         module: idShaderModule,
+    //         entryPoint: 'vs',
+    //         buffers: [
+    //             {
+    //                 arrayStride: 3 * 4, // 2 floats, 4 bytes each
+    //                 stepMode: 'instance',
+    //                 attributes: [
+    //                     { shaderLocation: 0, offset: 0, format: 'float32x3' },  // position
+    //                 ],
+    //             },
+    //             {
+    //                 arrayStride: 1 * 4, // 1 floats, 4bytes each
+    //                 stepMode: 'instance',
+    //                 attributes: [
+    //                     { shaderLocation: 1, offset: 0, format: 'float32' },    // id
+    //                 ]
+    //             }
+    //         ],
+    //     },
+    //     fragment: {
+    //         module: idShaderModule,
+    //         entryPoint: 'fs',
+    //         targets: [{ format: 'r8unorm' }],
+    //     },
+    // });
 
     const computePipeline = device.createComputePipeline({
         label: 'B Spline Surface Compute Pipeline',
@@ -318,6 +330,11 @@ async function main() {
                 storeOp: 'store',
             },
         ],
+        depthStencilAttachment: {
+            depthClearValue: 1.0,
+            depthLoadOp: 'clear',
+            depthStoreOp: 'store',
+        },
     };
     
     // CS Storage Buffers
@@ -348,11 +365,12 @@ async function main() {
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
     
-    // const computeResultBuffer = device.createBuffer({
-    //     label: 'computeResult buffer',
-    //     size: drawPointsSize,
-    //     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
-    // });
+    // debug compute result buffer
+    const computeResultBuffer = device.createBuffer({
+        label: 'computeResult buffer',
+        size: drawPointsSize,
+        usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
+    });
 
     const computeBindGroup = device.createBindGroup({
         label: 'bindGroup for compute shader',
@@ -368,48 +386,92 @@ async function main() {
     // VS input buffer    
     const vertexBuffer = device.createBuffer({
         label: 'vertex buffer',
-        size: controlPointsSize + drawPointsSize,
+        size: drawPointsTypedArray.byteLength,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+    
+    const indexBuffer = device.createBuffer({
+        label: 'index buffer',
+        size: sphereIndicesArray.byteLength,
+        usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(indexBuffer, 0, sphereIndicesArray);
+    
+    const mvpSize = 4 * 4 * 4;
+    const lightSize = 4 * 4;
+    const uniformBuffer = device.createBuffer({
+        label: 'uniform buffer',
+        size: mvpSize + lightSize,        // 4x4 matrix + light vector
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    
+    const bindGroup = device.createBindGroup({
+        label: 'bindGroup for render pipeline',
+        layout: renderPipeline.getBindGroupLayout(0),
+        entries: [
+            { binding: 0, resource: { buffer: uniformBuffer } },
+        ],
     });
     
     // picking Id buffer
-    const pickVertexBuffer = device.createBuffer({
-        label: 'picking vertex buffer',
-        size: controlPointsSize,
-        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-    });
+    // const pickVertexBuffer = device.createBuffer({
+    //     label: 'picking vertex buffer',
+    //     size: controlPointsSize,
+    //     usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    // });
     
-    const idVertexBuffer = device.createBuffer({
-        label: 'picking id vertex buffer',
-        size: controlPoints.length * 4,
-        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
-    });
+    // const idVertexBuffer = device.createBuffer({
+    //     label: 'picking id vertex buffer',
+    //     size: controlPoints.length * 4,
+    //     usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+    // });
     
-    const idMVPUniform = device.createBuffer({
-        label: 'picking MVP uniform buffer',
-        size: 4 * 4 * 4,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    })
+    // const idMVPUniform = device.createBuffer({
+    //     label: 'picking MVP uniform buffer',
+    //     size: 4 * 4 * 4,
+    //     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    // })
     
-    const bufferPicking = device.createBuffer({
-        label: "buffer to read the pixel at the mouse location",
-        size: 4,
-        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-    });
+    // const bufferPicking = device.createBuffer({
+    //     label: "buffer to read the pixel at the mouse location",
+    //     size: 4,
+    //     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    // });
     
-    const idReadBuffer = device.createBuffer({
-        label: "buffer to read the id",
-        size: controlPoints.length * 4,
-        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-    })
+    // const idReadBuffer = device.createBuffer({
+    //     label: "buffer to read the id",
+    //     size: controlPoints.length * 4,
+    //     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    // })
     
-    const bindGroupPick = device.createBindGroup({
-        label: "picking id bindgroup",
-        layout: idRenderPipeline.getBindGroupLayout(0),
-        entries: [
-            { binding: 0, resource: { buffer: idMVPUniform } },
-        ],
-    });
+    // const bindGroupPick = device.createBindGroup({
+    //     label: "picking id bindgroup",
+    //     layout: idRenderPipeline.getBindGroupLayout(0),
+    //     entries: [
+    //         { binding: 0, resource: { buffer: idMVPUniform } },
+    //     ],
+    // });
+    
+    // uniform buffer datas
+    const eye = [0, 0, 10];
+    const target = [0, 0, 0];
+    const up = [0, 1, 0];
+    
+    const fovy = utils.radToDeg(60);
+    const aspect = screenWidth / screenHeight;
+    const near = 0.1;
+    const far = 100.0;
+    
+    const view = mat4.lookAt(eye, target, up);
+    const projection = mat4.perspective(fovy, aspect, near, far);
+    const viewProjection = mat4.multiply(projection, view);
+    const light = new Float32Array([0.2, 0.2, 0.2, 1]);
+    
+    device.queue.writeBuffer(uniformBuffer, 0, viewProjection);
+    device.queue.writeBuffer(uniformBuffer, mvpSize, light);
+    
+    // texture buffers
+    let depthTexture;
     
     // github 2c7d497 버전의 문제점
     // 1. testIntersection 함수는 clickPoint(맨 처음의 mouse down 이벤트 때의 좌표) 기준으로만 작동한다.
@@ -514,33 +576,52 @@ async function main() {
         }
         
         // copy compute shader results to map
-        // encoder.copyBufferToBuffer(outputBuffer, 0, computeResultBuffer, 0, computeResultBuffer.size);
+        encoder.copyBufferToBuffer(outputBuffer, 0, computeResultBuffer, 0, computeResultBuffer.size);
         
         // copy compute shader results to vertex buffer
-        // encoder.copyBufferToBuffer(controlPointsBuffer, 0, vertexBuffer, 0, controlPointsSize);
-        // encoder.copyBufferToBuffer(outputBuffer, 0, vertexBuffer, controlPointsSize, drawPointsSize);
+        encoder.copyBufferToBuffer(outputBuffer, 0, vertexBuffer, 0, drawPointsSize);
         
-        // {
-        //     renderPassDescriptor.colorAttachments[0].view = context.getCurrentTexture().createView();
-        //     const renderPass = encoder.beginRenderPass(renderPassDescriptor);
+        {
+            const canvasTexture = context.getCurrentTexture();
+            renderPassDescriptor.colorAttachments[0].view = canvasTexture.createView();
 
-        //     renderPass.setPipeline(renderPipeline);
-        //     renderPass.setVertexBuffer(0, vertexBuffer);
-        //     renderPass.draw(6, controlPoints.length + drawPointsNum);
-        //     renderPass.end();
-        // }
+            if (!depthTexture ||
+                depthTexture.width !== canvasTexture.width ||
+                depthTexture.height !== canvasTexture.height) {
+                if (depthTexture) {
+                    depthTexture.destroy();
+                }
+                depthTexture = device.createTexture({
+                    size: [canvasTexture.width, canvasTexture.height],
+                    format: 'depth24plus',
+                    usage: GPUTextureUsage.RENDER_ATTACHMENT,
+                });
+            }
+            renderPassDescriptor.depthStencilAttachment.view = depthTexture.createView();
+            
+            const renderPass = encoder.beginRenderPass(renderPassDescriptor);
+
+            renderPass.setPipeline(renderPipeline);
+            renderPass.setVertexBuffer(0, vertexBuffer);
+            renderPass.setIndexBuffer(indexBuffer, "uint16");
+            renderPass.setBindGroup(0, bindGroup);
+            renderPass.drawIndexed(sphereIndicesArray.length);
+            
+            
+            
+            renderPass.end();
+        }
         
         const commandBuffer = encoder.finish();
         device.queue.submit([commandBuffer]);
         
         // check compute shader output
+        // console.log('compute shader control points', cpsTypedArray);
+        // console.log('compute shader draw points', drawPointsArray);
+        
         // await computeResultBuffer.mapAsync(GPUMapMode.READ);
         // const result = new Float32Array(computeResultBuffer.getMappedRange());
 
-        // console.log('compute shader control points', cpsTypedArray);
-        // console.log('compute shader knot points', knotTypedArray);
-        // console.log('compute shader draw points', drawPointsTypedArray);
-        // console.log('compute shader interaval points', intervalTypedArray);
         // console.log('compute shader result', result);
 
         // computeResultBuffer.unmap();

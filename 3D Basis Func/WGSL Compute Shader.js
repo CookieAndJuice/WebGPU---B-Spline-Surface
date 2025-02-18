@@ -1,5 +1,5 @@
 // compute_shader
-export function computeShaderSrc(degree, cpsWidthX, cpsHeightY, cpsWidthZ, xResultLength, tempWidth)
+export function computeShaderSrc(degree, cpsWidthX, cpsWidthY, cpsHeightZ, xResultLength, tempWidth)
 {
     return /* wgsl */`
         @group(0) @binding(0)
@@ -31,11 +31,11 @@ export function computeShaderSrc(degree, cpsWidthX, cpsHeightY, cpsWidthZ, xResu
             
             let degree = u32(${degree});
             let cpsWidthX = u32(${cpsWidthX});
-            let cpsHeightY = u32(${cpsHeightY});
-            let cpsWidthZ = u32(${cpsWidthZ});
+            let cpsWidthY = u32(${cpsWidthY});
+            let cpsHeightZ = u32(${cpsHeightZ});
             let tempWidth = u32(${tempWidth});
             var xResult: array<vec3f, ${xResultLength}>;
-            var zResult: array<vec3f, ${tempWidth}>;
+            var yResult: array<vec3f, ${tempWidth}>;
             let index = global_invocation_index;
             
             // De Boor Algorithm Start
@@ -44,30 +44,35 @@ export function computeShaderSrc(degree, cpsWidthX, cpsHeightY, cpsWidthZ, xResu
             let zInterval = intervals[index].z;
             
             // x-axis calculation (계산 순서 : u 하나에 대해 모든 높이 계산 -> 다음 u 계산)
-            let zOffset = cpsWidthX;                    // z-axis offset
-            var yOffset = cpsWidthX * cpsWidthZ;        // y-axis offset
+            let yOffset = cpsWidthX;                    // y-axis offset
+            var zOffset = cpsWidthX * cpsWidthY;        // z-axis offset
             let xInput = inputs[index].x;
             
-            var first = (f32(xInterval) + 1 - xInput) * (f32(xInterval) + 1 - xInput) * (f32(xInterval) + 1 - xInput) / 6;
-            var second = ((xInput - f32(xInterval) + 2) * (f32(xInterval) + 1 - xInput) * (f32(xInterval) + 1 - xInput) +
-                        (f32(xInterval) + 2 - xInput) * (xInput - f32(xInterval) + 1) * (f32(xInterval) + 1 - xInput) +
-                        (f32(xInterval) + 2 - xInput) * (f32(xInterval) + 2 - xInput) * (xInput - f32(xInterval))) / 6;
-            var third = ((xInput - f32(xInterval) + 1) * (xInput - f32(xInterval) + 1) * (f32(xInterval) + 1 - xInput) +
-                        (xInput - f32(xInterval) + 1) * (f32(xInterval) + 2 - xInput) * (xInput - f32(xInterval)) +
-                        (f32(xInterval) + 3 - xInput) * (xInput - f32(xInterval)) * (xInput - f32(xInterval))) / 6;
-            var fourth = (xInput - f32(xInterval)) * (xInput - f32(xInterval)) * (xInput - f32(xInterval)) / 6;
+            var first = f32(0);
+            var second = f32(0);
+            var third = f32(0);
+            var fourth = f32(0);
             
             // loop {tempWidth} times * {tempWidth} times
-            for (var heightY = 0u; heightY < tempWidth; heightY++)
+            for (var heightZ = 0u; heightZ < tempWidth; heightZ++)
             {
-                for (var widthZ = 0u; widthZ < tempWidth; widthZ++)
+                for (var widthY = 0u; widthY < tempWidth; widthY++)
                 {
+                    first = (f32(xInterval) + 1 - xInput) * (f32(xInterval) + 1 - xInput) * (f32(xInterval) + 1 - xInput) / 6;
+                    second = ((xInput - f32(xInterval) + 2) * (f32(xInterval) + 1 - xInput) * (f32(xInterval) + 1 - xInput) +
+                                (f32(xInterval) + 2 - xInput) * (xInput - f32(xInterval) + 1) * (f32(xInterval) + 1 - xInput) +
+                                (f32(xInterval) + 2 - xInput) * (f32(xInterval) + 2 - xInput) * (xInput - f32(xInterval))) / 6;
+                    third = ((xInput - f32(xInterval) + 1) * (xInput - f32(xInterval) + 1) * (f32(xInterval) + 1 - xInput) +
+                                (xInput - f32(xInterval) + 1) * (f32(xInterval) + 2 - xInput) * (xInput - f32(xInterval)) +
+                                (f32(xInterval) + 3 - xInput) * (xInput - f32(xInterval)) * (xInput - f32(xInterval))) / 6;
+                    fourth = (xInput - f32(xInterval)) * (xInput - f32(xInterval)) * (xInput - f32(xInterval)) / 6;
+                    
                     // calculate [iInitial - 1]
                     // [interval - degree + 1] is ?-axis Start Point
-                    // y-axis nowPos, z-axis nowpos, x-axis nowPos
+                    // z-axis nowpos, y-axis nowPos, x-axis nowPos
                     let nowPos =
-                        (heightY + yInterval - degree + 1) * yOffset +
-                        (widthZ + zInterval - degree + 1) * zOffset +
+                        (heightZ + zInterval - degree + 1) * zOffset +
+                        (widthY + yInterval - degree + 1) * yOffset +
                         (xInterval - degree + 1);
                     
                     var xPoint: vec3f;
@@ -77,58 +82,57 @@ export function computeShaderSrc(degree, cpsWidthX, cpsHeightY, cpsWidthZ, xResu
                             third * control_points[nowPos + 2] +
                             fourth * control_points[nowPos + 3];
                     
-                    xResult[heightY * tempWidth + widthZ] = xPoint;
+                    xResult[heightZ * tempWidth + widthY] = xPoint;
                 }
-            }
-            
-            // z axis calculation
-            yOffset = cpsWidthZ;                    // y-axis offset
-            let zInput = inputs[index].z;
-            
-            // loop {tempWidth} times
-            for (var heightY = 0u; heightY < tempWidth; heightY++)
-            {
-                // iInitial - 1
-                // y-axis nowPos, z-axis nowpos, x-axis nowPos
-                let nowPos = heightY * tempWidth;
-                
-                first = (f32(zInterval) + 1 - zInput) * (f32(zInterval) + 1 - zInput) * (f32(zInterval) + 1 - zInput) / 6;
-                second = ((zInput - f32(zInterval) + 2) * (f32(zInterval) + 1 - zInput) * (f32(zInterval) + 1 - zInput) +
-                        (f32(zInterval) + 2 - zInput) * (zInput - f32(zInterval) + 1) * (f32(zInterval) + 1 - zInput) +
-                        (f32(zInterval) + 2 - zInput) * (f32(zInterval) + 2 - zInput) * (zInput - f32(zInterval))) / 6;
-                third = ((zInput - f32(zInterval) + 1) * (zInput - f32(zInterval) + 1) * (f32(zInterval) + 1 - zInput) +
-                        (zInput - f32(zInterval) + 1) * (f32(zInterval) + 2 - zInput) * (zInput - f32(zInterval)) +
-                        (f32(zInterval) + 3 - zInput) * (zInput - f32(zInterval)) * (zInput - f32(zInterval))) / 6;
-                fourth = (zInput - f32(zInterval)) * (zInput - f32(zInterval)) * (zInput - f32(zInterval)) / 6;
-                
-                var zPoint: vec3f;
-                zPoint = first * xResult[nowPos] +
-                        second * xResult[nowPos + 1] +
-                        third * xResult[nowPos + 2] +
-                        fourth * xResult[nowPos + 3];
-                
-                zResult[heightY] = zPoint;
             }
             
             // y axis calculation
             let yInput = inputs[index].y;
             
-            first = (f32(yInterval) + 1 - yInput) * (f32(yInterval) + 1 - yInput) * (f32(yInterval) + 1 - yInput) / 6;
-            second = ((yInput - f32(yInterval) + 2) * (f32(yInterval) + 1 - yInput) * (f32(yInterval) + 1 - yInput) +
-                    (f32(yInterval) + 2 - yInput) * (yInput - f32(yInterval) + 1) * (f32(yInterval) + 1 - yInput) +
-                    (f32(yInterval) + 2 - yInput) * (f32(yInterval) + 2 - yInput) * (yInput - f32(yInterval))) / 6;
-            third = ((yInput - f32(yInterval) + 1) * (yInput - f32(yInterval) + 1) * (f32(yInterval) + 1 - yInput) +
-                    (yInput - f32(yInterval) + 1) * (f32(yInterval) + 2 - yInput) * (yInput - f32(yInterval)) +
-                    (f32(yInterval) + 3 - yInput) * (yInput - f32(yInterval)) * (yInput - f32(yInterval))) / 6;
-            fourth = (yInput - f32(yInterval)) * (yInput - f32(yInterval)) * (yInput - f32(yInterval)) / 6;
+            // loop {tempWidth} times
+            for (var heightZ = 0u; heightZ < tempWidth; heightZ++)
+            {
+                // iInitial - 1
+                // z-axis nowpos, y-axis nowPos, x-axis nowPos
+                let nowPos = heightZ * tempWidth;
+                
+                first = (f32(yInterval) + 1 - yInput) * (f32(yInterval) + 1 - yInput) * (f32(yInterval) + 1 - yInput) / 6;
+                second = ((yInput - f32(yInterval) + 2) * (f32(yInterval) + 1 - yInput) * (f32(yInterval) + 1 - yInput) +
+                        (f32(yInterval) + 2 - yInput) * (yInput - f32(yInterval) + 1) * (f32(yInterval) + 1 - yInput) +
+                        (f32(yInterval) + 2 - yInput) * (f32(yInterval) + 2 - yInput) * (yInput - f32(yInterval))) / 6;
+                third = ((yInput - f32(yInterval) + 1) * (yInput - f32(yInterval) + 1) * (f32(yInterval) + 1 - yInput) +
+                        (yInput - f32(yInterval) + 1) * (f32(yInterval) + 2 - yInput) * (yInput - f32(yInterval)) +
+                        (f32(yInterval) + 3 - yInput) * (yInput - f32(yInterval)) * (yInput - f32(yInterval))) / 6;
+                fourth = (yInput - f32(yInterval)) * (yInput - f32(yInterval)) * (yInput - f32(yInterval)) / 6;
+                
+                var yPoint: vec3f;
+                yPoint = first * xResult[nowPos] +
+                        second * xResult[nowPos + 1] +
+                        third * xResult[nowPos + 2] +
+                        fourth * xResult[nowPos + 3];
+                
+                yResult[heightZ] = yPoint;
+            }
             
-            var yPoint: vec3f;
-            yPoint = first * zResult[0] +
-                    second * zResult[1] +
-                    third * zResult[2] +
-                    fourth * zResult[3];
+            // z axis calculation
+            let zInput = inputs[index].z;
             
-            output[index] = yPoint;
+            first = (f32(zInterval) + 1 - zInput) * (f32(zInterval) + 1 - zInput) * (f32(zInterval) + 1 - zInput) / 6;
+            second = ((zInput - f32(zInterval) + 2) * (f32(zInterval) + 1 - zInput) * (f32(zInterval) + 1 - zInput) +
+                    (f32(zInterval) + 2 - zInput) * (zInput - f32(zInterval) + 1) * (f32(zInterval) + 1 - zInput) +
+                    (f32(zInterval) + 2 - zInput) * (f32(zInterval) + 2 - zInput) * (zInput - f32(zInterval))) / 6;
+            third = ((zInput - f32(zInterval) + 1) * (zInput - f32(zInterval) + 1) * (f32(zInterval) + 1 - zInput) +
+                    (zInput - f32(zInterval) + 1) * (f32(zInterval) + 2 - zInput) * (zInput - f32(zInterval)) +
+                    (f32(zInterval) + 3 - zInput) * (zInput - f32(zInterval)) * (zInput - f32(zInterval))) / 6;
+            fourth = (zInput - f32(zInterval)) * (zInput - f32(zInterval)) * (zInput - f32(zInterval)) / 6;
+            
+            var zPoint: vec3f;
+            zPoint = first * yResult[0] +
+                    second * yResult[1] +
+                    third * yResult[2] +
+                    fourth * yResult[3];
+            
+            output[index] = zPoint;
         }
     `;
 }

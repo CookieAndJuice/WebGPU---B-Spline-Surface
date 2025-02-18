@@ -169,14 +169,12 @@ async function main() {
 
     const radius = 4;
     let theta = 0;
-    let dpsOffset = 0;
     const drawPointsArray = [];
     for (let i = 0; i < drawPointsNum; ++i) {
         theta = i * dTheta;
 
         drawPointsArray[i] = [Number((5 + radius * Math.cos(theta * Math.PI / 180)) / 10) * (domainNum - 1) + start,
                               Number((5 + radius * Math.sin(theta * Math.PI / 180)) / 10) * (domainNum - 1) + start];
-        dpsOffset += 2;
     }
     const drawPointsTypedArray = new Float32Array(drawPointsArray.flat());
 
@@ -200,7 +198,6 @@ async function main() {
 
     // uResult & tempCps size
     const tempWidth = degree + 1; 
-    const output_U_V_Offset = drawPointsArray.length;
     
     // Shader
     const vertexShaderModule = device.createShaderModule({
@@ -324,11 +321,12 @@ async function main() {
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
     
-    // const computeResultBuffer = device.createBuffer({
-    //     label: 'computeResult buffer',
-    //     size: drawPointsSize,
-    //     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
-    // });
+    // debug compute result buffer
+    const computeResultBuffer = device.createBuffer({
+        label: 'computeResult buffer',
+        size: drawPointsSize,
+        usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
+    });
 
     // compute shader에서 knotBuffer를 de boor algorithm에서는 사용했지만, 여기서는 사용하지 않는데
     // compute shader에서 사용하지 않는 buffer를 bindGroup에 넣으면 오류가 발생한다.
@@ -491,7 +489,7 @@ async function main() {
         }
         
         // copy compute shader results to map
-        // encoder.copyBufferToBuffer(outputBuffer, 0, computeResultBuffer, 0, computeResultBuffer.size);
+        encoder.copyBufferToBuffer(outputBuffer, 0, computeResultBuffer, 0, computeResultBuffer.size);
         
         // copy compute shader results to vertex buffer
         encoder.copyBufferToBuffer(controlPointsBuffer, 0, vertexBuffer, 0, controlPointsSize);
@@ -511,16 +509,17 @@ async function main() {
         device.queue.submit([commandBuffer]);
         
         // check compute shader output
-        // await computeResultBuffer.mapAsync(GPUMapMode.READ);
-        // const result = new Float32Array(computeResultBuffer.getMappedRange());
-
         // console.log('compute shader control points', cpsTypedArray);
         // console.log('compute shader knot points', knotTypedArray);
         // console.log('compute shader draw points', drawPointsTypedArray);
         // console.log('compute shader interaval points', intervalTypedArray);
-        // console.log('compute shader result', result);
+        
+        // await computeResultBuffer.mapAsync(GPUMapMode.READ);
+        // const result = new Float32Array(computeResultBuffer.getMappedRange());
 
-        //computeResultBuffer.unmap();
+        // console.log('compute shader result', result);
+        
+        // computeResultBuffer.unmap();
         
         requestAnimationFrame(render);
     }
