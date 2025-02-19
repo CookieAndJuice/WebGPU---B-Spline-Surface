@@ -1,5 +1,5 @@
 // compute_shader
-export function computeShaderSrc(degree, cpsWidthX, cpsWidthY, cpsHeightZ, xResultLength, tempWidth)
+export function computeShaderSrc(degree, cpsWidthX, cpsWidthY, cpsHeightZ, xResultLength, tempWidth, start, end)
 {
     return /* wgsl */`
         @group(0) @binding(0)
@@ -48,25 +48,20 @@ export function computeShaderSrc(degree, cpsWidthX, cpsWidthY, cpsHeightZ, xResu
             var zOffset = cpsWidthX * cpsWidthY;        // z-axis offset
             let xInput = inputs[index].x;
             
-            var first = f32(0);
-            var second = f32(0);
-            var third = f32(0);
-            var fourth = f32(0);
+            var first = (f32(xInterval) + 1 - xInput) * (f32(xInterval) + 1 - xInput) * (f32(xInterval) + 1 - xInput) / 6;
+            var second = ((xInput - f32(xInterval) + 2) * (f32(xInterval) + 1 - xInput) * (f32(xInterval) + 1 - xInput) +
+                        (f32(xInterval) + 2 - xInput) * (xInput - f32(xInterval) + 1) * (f32(xInterval) + 1 - xInput) +
+                        (f32(xInterval) + 2 - xInput) * (f32(xInterval) + 2 - xInput) * (xInput - f32(xInterval))) / 6;
+            var third = ((xInput - f32(xInterval) + 1) * (xInput - f32(xInterval) + 1) * (f32(xInterval) + 1 - xInput) +
+                        (xInput - f32(xInterval) + 1) * (f32(xInterval) + 2 - xInput) * (xInput - f32(xInterval)) +
+                        (f32(xInterval) + 3 - xInput) * (xInput - f32(xInterval)) * (xInput - f32(xInterval))) / 6;
+            var fourth = (xInput - f32(xInterval)) * (xInput - f32(xInterval)) * (xInput - f32(xInterval)) / 6;
             
             // loop {tempWidth} times * {tempWidth} times
             for (var heightZ = 0u; heightZ < tempWidth; heightZ++)
             {
                 for (var widthY = 0u; widthY < tempWidth; widthY++)
-                {
-                    first = (f32(xInterval) + 1 - xInput) * (f32(xInterval) + 1 - xInput) * (f32(xInterval) + 1 - xInput) / 6;
-                    second = ((xInput - f32(xInterval) + 2) * (f32(xInterval) + 1 - xInput) * (f32(xInterval) + 1 - xInput) +
-                                (f32(xInterval) + 2 - xInput) * (xInput - f32(xInterval) + 1) * (f32(xInterval) + 1 - xInput) +
-                                (f32(xInterval) + 2 - xInput) * (f32(xInterval) + 2 - xInput) * (xInput - f32(xInterval))) / 6;
-                    third = ((xInput - f32(xInterval) + 1) * (xInput - f32(xInterval) + 1) * (f32(xInterval) + 1 - xInput) +
-                                (xInput - f32(xInterval) + 1) * (f32(xInterval) + 2 - xInput) * (xInput - f32(xInterval)) +
-                                (f32(xInterval) + 3 - xInput) * (xInput - f32(xInterval)) * (xInput - f32(xInterval))) / 6;
-                    fourth = (xInput - f32(xInterval)) * (xInput - f32(xInterval)) * (xInput - f32(xInterval)) / 6;
-                    
+                {                    
                     // calculate [iInitial - 1]
                     // [interval - degree + 1] is ?-axis Start Point
                     // z-axis nowpos, y-axis nowPos, x-axis nowPos
@@ -88,22 +83,25 @@ export function computeShaderSrc(degree, cpsWidthX, cpsWidthY, cpsHeightZ, xResu
             
             // y axis calculation
             let yInput = inputs[index].y;
+            let start = f32(${start});
+            let end = f32(${end});
+            let domainNum = end - start + 1;
             
+            first = (f32(yInterval) + 1 - yInput) * (f32(yInterval) + 1 - yInput) * (f32(yInterval) + 1 - yInput) / 6;
+            second = ((yInput - f32(yInterval) + 2) * (f32(yInterval) + 1 - yInput) * (f32(yInterval) + 1 - yInput) +
+                    (f32(yInterval) + 2 - yInput) * (yInput - f32(yInterval) + 1) * (f32(yInterval) + 1 - yInput) +
+                    (f32(yInterval) + 2 - yInput) * (f32(yInterval) + 2 - yInput) * (yInput - f32(yInterval))) / 6;
+            third = ((yInput - f32(yInterval) + 1) * (yInput - f32(yInterval) + 1) * (f32(yInterval) + 1 - yInput) +
+                    (yInput - f32(yInterval) + 1) * (f32(yInterval) + 2 - yInput) * (yInput - f32(yInterval)) +
+                    (f32(yInterval) + 3 - yInput) * (yInput - f32(yInterval)) * (yInput - f32(yInterval))) / 6;
+            fourth = (yInput - f32(yInterval)) * (yInput - f32(yInterval)) * (yInput - f32(yInterval)) / 6;
+
             // loop {tempWidth} times
             for (var heightZ = 0u; heightZ < tempWidth; heightZ++)
             {
                 // iInitial - 1
                 // z-axis nowpos, y-axis nowPos, x-axis nowPos
                 let nowPos = heightZ * tempWidth;
-                
-                first = (f32(yInterval) + 1 - yInput) * (f32(yInterval) + 1 - yInput) * (f32(yInterval) + 1 - yInput) / 6;
-                second = ((yInput - f32(yInterval) + 2) * (f32(yInterval) + 1 - yInput) * (f32(yInterval) + 1 - yInput) +
-                        (f32(yInterval) + 2 - yInput) * (yInput - f32(yInterval) + 1) * (f32(yInterval) + 1 - yInput) +
-                        (f32(yInterval) + 2 - yInput) * (f32(yInterval) + 2 - yInput) * (yInput - f32(yInterval))) / 6;
-                third = ((yInput - f32(yInterval) + 1) * (yInput - f32(yInterval) + 1) * (f32(yInterval) + 1 - yInput) +
-                        (yInput - f32(yInterval) + 1) * (f32(yInterval) + 2 - yInput) * (yInput - f32(yInterval)) +
-                        (f32(yInterval) + 3 - yInput) * (yInput - f32(yInterval)) * (yInput - f32(yInterval))) / 6;
-                fourth = (yInput - f32(yInterval)) * (yInput - f32(yInterval)) * (yInput - f32(yInterval)) / 6;
                 
                 var yPoint: vec3f;
                 yPoint = first * xResult[nowPos] +
@@ -131,7 +129,8 @@ export function computeShaderSrc(degree, cpsWidthX, cpsWidthY, cpsHeightZ, xResu
                     second * yResult[1] +
                     third * yResult[2] +
                     fourth * yResult[3];
-            
+
+            // output[index] = (zPoint - start) / (domainNum - 1) * 2 - 1;
             output[index] = zPoint;
         }
     `;

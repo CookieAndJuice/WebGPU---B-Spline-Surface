@@ -137,14 +137,14 @@ async function main() {
     const cpsWidthY = 5;
     const cpsHeightZ = 5;
     
-    const offset = 10;
+    const offset = 1;
     let controlPoints = [];
 
     for (let z = 0; z < cpsHeightZ; ++z) {
         for (let y = 0; y < cpsWidthY; ++y) {
             for (let x = 0; x < cpsWidthX; ++x)
             {
-                controlPoints.push([-offset + offset * x, -offset + offset * y, -offset + offset * z]);
+                controlPoints.push([offset * x, offset * y, offset * z]);
             }
         }
     }
@@ -152,6 +152,8 @@ async function main() {
     const controlPointsSize = controlPointUnitSize * controlPoints.length;
     const cpsTypedArray = new Float32Array(controlPoints.flat());
     
+    console.log(controlPoints);
+
     // id values to rgb values
     const idTypedArray = new Float32Array(controlPoints.length);
     for (let i = 0; i < controlPoints.length; i++) {
@@ -226,7 +228,7 @@ async function main() {
     // Shader
     const vertexShaderModule = device.createShaderModule({
         label: 'B Spline Surface Vertex Module',
-        code: vertexShaderSrc(sizeRatio),
+        code: vertexShaderSrc(),
     });
 
     const fragmentShaderModule = device.createShaderModule({
@@ -236,12 +238,12 @@ async function main() {
 
     // const idShaderModule = device.createShaderModule({
     //     label: 'Id Vertex Shader Module',
-    //     code: ShaderIdSrc(sizeRatio),
+    //     code: ShaderIdSrc(),
     // });
     
     const computeShaderModule = device.createShaderModule({
         label: 'B Spline Surface Compute Module',
-        code: computeShaderSrc(degree, cpsWidthX, cpsWidthY, cpsHeightZ, xResultLength, tempWidth),
+        code: computeShaderSrc(degree, cpsWidthX, cpsWidthY, cpsHeightZ, xResultLength, tempWidth, start, end),
     });
 
     // Pipeline
@@ -273,6 +275,7 @@ async function main() {
             targets: [{ format: presentationFormat }],
         },
         primitive: {
+            topology: 'point-list',
             cullMode: 'back',
         },
         depthStencil: {

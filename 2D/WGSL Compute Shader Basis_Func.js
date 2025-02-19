@@ -68,7 +68,6 @@ export function computeShaderSrc(degree, cpsWidth, cpsHeight, tempWidth) {
             }
             
             // v 방향 계산
-            let xOffset = tempWidth;                    // 너비값 넘어갈 때 offset
             let vInput = inputs[index].y;
             
             first = (f32(vInterval) + 1 - vInput) * (f32(vInterval) + 1 - vInput) * (f32(vInterval) + 1 - vInput) / 6;

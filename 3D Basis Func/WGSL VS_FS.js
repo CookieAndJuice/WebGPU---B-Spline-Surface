@@ -1,5 +1,5 @@
 // Vertex Shader & Fragment Shader
-export function vertexShaderSrc(sizeRatio)
+export function vertexShaderSrc()
 {
     return /*wgsl*/`
         struct VSInput {
@@ -13,7 +13,7 @@ export function vertexShaderSrc(sizeRatio)
         
         struct Uniforms {
             MVP: mat4x4f,
-            light: vec4f,
+            light: vec3f,
         };
         
         @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -25,9 +25,8 @@ export function vertexShaderSrc(sizeRatio)
             var position = vertex.position;
 
             var vsOut: VSOutput;
-            var sizeRatio = vec3f(${sizeRatio.x}f, ${sizeRatio.y}f, ${sizeRatio.z}f);
             
-            vsOut.position = uniforms.MVP * vec4f(position / sizeRatio, 1);
+            vsOut.position = uniforms.MVP * vec4f(position, 1);
             vsOut.color = vec4f(0, 0.7, 0.7, 1);
             
             return vsOut;
