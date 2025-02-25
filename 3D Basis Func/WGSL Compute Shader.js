@@ -3,16 +3,16 @@ export function computeShaderSrc(degree, cpsWidthX, cpsWidthY, cpsHeightZ, xResu
 {
     return /* wgsl */`
         @group(0) @binding(0)
-        var<storage, read> control_points: array<vec3f>;
+        var<storage, read> control_points: array<vec4f>;
 
         @group(0) @binding(1)
-        var<storage, read> inputs: array<vec3f>;
+        var<storage, read> inputs: array<vec4f>;
 
         @group(0) @binding(2)
-        var<storage, read> intervals: array<vec3u>;
+        var<storage, read> intervals: array<vec4u>;
 
         @group(0) @binding(3)
-        var<storage, read_write> output: array<vec3f>;
+        var<storage, read_write> output: array<vec4f>;
 
         @compute @workgroup_size(64)
         fn main(
@@ -34,8 +34,8 @@ export function computeShaderSrc(degree, cpsWidthX, cpsWidthY, cpsHeightZ, xResu
             let cpsWidthY = u32(${cpsWidthY});
             let cpsHeightZ = u32(${cpsHeightZ});
             let tempWidth = u32(${tempWidth});
-            var xResult: array<vec3f, ${xResultLength}>;
-            var yResult: array<vec3f, ${tempWidth}>;
+            var xResult: array<vec4f, ${xResultLength}>;
+            var yResult: array<vec4f, ${tempWidth}>;
             let index = global_invocation_index;
             
             // De Boor Algorithm Start
@@ -70,7 +70,7 @@ export function computeShaderSrc(degree, cpsWidthX, cpsWidthY, cpsHeightZ, xResu
                         (widthY + yInterval - degree + 1) * yOffset +
                         (xInterval - degree + 1);
                     
-                    var xPoint: vec3f;
+                    var xPoint: vec4f;
                     
                     xPoint = first * control_points[nowPos] +
                             second * control_points[nowPos + 1] +
@@ -103,7 +103,7 @@ export function computeShaderSrc(degree, cpsWidthX, cpsWidthY, cpsHeightZ, xResu
                 // z-axis nowpos, y-axis nowPos, x-axis nowPos
                 let nowPos = heightZ * tempWidth;
                 
-                var yPoint: vec3f;
+                var yPoint: vec4f;
                 yPoint = first * xResult[nowPos] +
                         second * xResult[nowPos + 1] +
                         third * xResult[nowPos + 2] +
@@ -124,13 +124,14 @@ export function computeShaderSrc(degree, cpsWidthX, cpsWidthY, cpsHeightZ, xResu
                     (f32(zInterval) + 3 - zInput) * (zInput - f32(zInterval)) * (zInput - f32(zInterval))) / 6;
             fourth = (zInput - f32(zInterval)) * (zInput - f32(zInterval)) * (zInput - f32(zInterval)) / 6;
             
-            var zPoint: vec3f;
+            var zPoint: vec4f;
             zPoint = first * yResult[0] +
                     second * yResult[1] +
                     third * yResult[2] +
                     fourth * yResult[3];
 
             // output[index] = (zPoint - start) / (domainNum - 1) * 2 - 1;
+            zPoint.w = 1;
             output[index] = zPoint;
         }
     `;

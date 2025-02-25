@@ -3,12 +3,12 @@ export function vertexShaderSrc()
 {
     return /*wgsl*/`
         struct VSInput {
-            @location(0) position: vec3f,
+            @location(0) position: vec4f,
         };
 
         struct VSOutput {
             @builtin(position) position: vec4f,
-            @location(0) color: vec4f,
+            @location(0) color: vec3f,
         };
         
         struct Uniforms {
@@ -26,8 +26,8 @@ export function vertexShaderSrc()
 
             var vsOut: VSOutput;
             
-            vsOut.position = uniforms.MVP * vec4f(position, 1);
-            vsOut.color = vec4f(0, 0.7, 0.7, 1);
+            vsOut.position = uniforms.MVP * position;
+            vsOut.color = vec3f(0, 0.7, 0.7);
             
             return vsOut;
         }
@@ -39,12 +39,15 @@ export function fragmentShaderSrc()
     return /*wgsl*/`
         struct FSInput {
             @builtin(position) position: vec4f,
-            @location(0) color: vec4f,
+            @location(0) color: vec3f,
         };
 
         @fragment fn fs(fsIn: FSInput) -> @location(0) vec4f
         {
-            return fsIn.color;
+
+            var resultColor = vec4f(fsIn.color, 1.0);
+
+            return resultColor;
         }
     `;
 }
