@@ -86,7 +86,7 @@ async function main() {
     const cpsTypedArray = new Float32Array(controlPoints.flat());
     
     console.log(controlPoints);
-
+    
     // id values to rgb values
     const idTypedArray = new Float32Array(controlPoints.length);
     for (let i = 0; i < controlPoints.length; i++) {
@@ -112,6 +112,8 @@ async function main() {
     const spherePointsArray = ModelObject.geometry.attributes.position.array;  // -1 ~ 1
     const sphereIndicesArray = ModelObject.geometry.index.array;
     const sphereNormalsArray = ModelObject.geometry.attributes.normal.array;
+    
+    console.log(sphereNormalsArray);
     
     const drawPointsNum = spherePointsArray.length / 3;
     
@@ -186,19 +188,19 @@ async function main() {
             module: vertexShaderModule,
             buffers: [
                 {
-                    arrayStride: 4 * 4, // 3 floats, 4 bytes each
+                    arrayStride: 4 * 4, // 4 floats, 4 bytes each
                     stepMode: 'vertex',
                     attributes: [
                         { shaderLocation: 0, offset: 0, format: 'float32x4' },  // position
                     ],
                 },
-                // {
-                //     arrayStride: 3 * 4, // 3 floats, 4 bytes each
-                //     stepMode: 'vertex',
-                //     attributes: [
-                //         { shaderLocation: 1, offset: 0, format: 'float32x3' },  // normal
-                //     ],
-                // },
+                {
+                    arrayStride: 3 * 4, // 3 floats, 4 bytes each
+                    stepMode: 'vertex',
+                    attributes: [
+                        { shaderLocation: 1, offset: 0, format: 'float32x3' },  // normal
+                    ],
+                },
             ],
         },
         fragment: {
@@ -288,11 +290,18 @@ async function main() {
     });
 
     // VS input buffer    
-    const vertexBuffer = device.createBuffer({
+    const vertexPointBuffer = device.createBuffer({
         label: 'vertex buffer',
         size: drawPointsTypedArray.byteLength,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
+    
+    const vertexNormalBuffer = device.createBuffer({
+        label: 'vertex normal buffer',
+        size: sphereNormalsArray.byteLength,
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(vertexNormalBuffer, 0, sphereNormalsArray);
     
     const indexBuffer = device.createBuffer({
         label: 'index buffer',
@@ -303,9 +312,10 @@ async function main() {
     
     const mvpSize = 4 * 4 * 4;
     const lightSize = 4 * 4;
+    const eyeSize = 4 * 4;
     const uniformBuffer = device.createBuffer({
         label: 'uniform buffer',
-        size: mvpSize + lightSize,        // 4x4 matrix + light vector
+        size: mvpSize + lightSize + eyeSize,        // 4x4 matrix + light vector
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     
@@ -321,6 +331,7 @@ async function main() {
     const eye = [0, 0, 10];
     const target = [0, 0, 0];
     const up = [0, 1, 0];
+    const eyePosition = new Float32Array(eye);
     
     const fovy = utils.radToDeg(60);
     const aspect = screenWidth / screenHeight;
@@ -330,10 +341,11 @@ async function main() {
     const view = mat4.lookAt(eye, target, up);
     const projection = mat4.perspective(fovy, aspect, near, far);
     const viewProjection = mat4.multiply(projection, view);
-    const light = new Float32Array([0.2, 0.2, 0.2, 1]);
+    const lightDirection = new Float32Array([-0.5, -0.5, -0.5]);
     
     device.queue.writeBuffer(uniformBuffer, 0, viewProjection);
-    device.queue.writeBuffer(uniformBuffer, mvpSize, light);
+    device.queue.writeBuffer(uniformBuffer, mvpSize, lightDirection);
+    device.queue.writeBuffer(uniformBuffer, mvpSize + lightSize, eyePosition);
     
     // texture buffers
     let depthTexture;
@@ -357,10 +369,10 @@ async function main() {
         encoder.copyBufferToBuffer(outputBuffer, 0, computeResultBuffer, 0, computeResultBuffer.size);
         
         // copy compute shader results to vertex buffer
-        encoder.copyBufferToBuffer(outputBuffer, 0, vertexBuffer, 0, drawPointsSize);
+        encoder.copyBufferToBuffer(outputBuffer, 0, vertexPointBuffer, 0, drawPointsSize);
         
-        // device.queue.writeBuffer(vertexBuffer, 0, drawPointsTypedArray);
-        // device.queue.writeBuffer(vertexBuffer, 0, spherePointsArray);
+        // device.queue.writeBuffer(vertexPointBuffer, 0, drawPointsTypedArray);
+        // device.queue.writeBuffer(vertexPointBuffer, 0, spherePointsArray);
         
         {
             const canvasTexture = context.getCurrentTexture();
@@ -383,7 +395,8 @@ async function main() {
             const renderPass = encoder.beginRenderPass(renderPassDescriptor);
 
             renderPass.setPipeline(renderPipeline);
-            renderPass.setVertexBuffer(0, vertexBuffer);
+            renderPass.setVertexBuffer(0, vertexPointBuffer);
+            renderPass.setVertexBuffer(1, vertexNormalBuffer);
             renderPass.setIndexBuffer(indexBuffer, "uint16");
             renderPass.setBindGroup(0, bindGroup);
             renderPass.drawIndexed(sphereIndicesArray.length);
