@@ -4,27 +4,25 @@ export function vertexShaderSrc(aspect, resolution, controlPointsNum)
     return /*wgsl*/`
         struct Vertices {
             @location(0) position: vec2f,
-            @location(1) color: vec4f,
+            @location(1) texCoord: vec2f,
         };
-    
+
         struct VSOutput {
             @builtin(position) position: vec4f,
-            @location(0) color: vec4f,
+            @location(0) texCoord: vec2f,
         };
 
         @vertex fn vs(
-            @builtin(instance_index) instanceIndex: u32,
             vertex: Vertices
         ) -> VSOutput
         {
-            var centerPoint = vertex.position;
             let aspect = ${aspect}f;
 
             var vsOut: VSOutput;
             var resolution = vec2f(${resolution.x}f, ${resolution.y}f);
 
-            vsOut.position = vec4f(centerPoint, 0, 1);
-            vsOut.color = vertex.color;
+            vsOut.position = vec4f(vertex.position, 0, 1);
+            vsOut.texCoord = vertex.texCoord;
             
             return vsOut;
         }
@@ -36,12 +34,15 @@ export function fragmentShaderSrc()
     return /*wgsl*/`
         struct FSInput {
             @builtin(position) position: vec4f,
-            @location(0) color: vec4f,
+            @location(0) texCoord: vec2f,
         };
+
+        @group(0) @binding(0) var ourSampler: sampler;
+        @group(0) @binding(1) var ourTexture: texture_2d<f32>;
 
         @fragment fn fs(fsIn: FSInput) -> @location(0) vec4f
         {
-            return fsIn.color;
+            return textureSample(ourTexture, ourSampler, fsIn.texCoord);
         }
     `;
 }
