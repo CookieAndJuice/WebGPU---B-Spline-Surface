@@ -4,7 +4,7 @@ import { computeShaderSrc } from './WGSL_Compute_Shader_Basis_Func.js';
 import { ShaderIdSrc } from './WGSL_Pick_VS_FS.js';
 import { vec2, vec3, vec4, mat3, utils } from 'wgpu-matrix';
 import objectVertices from './Image/vertices.json' with {type: "json"};
-import objectColors from './Image/texCoords.json' with {type: "json"};
+import objectColors from './Image/colors.json' with {type: "json"};
 
 function findInterval(knotList, point) {
     let returnIndex = 0;
@@ -187,8 +187,8 @@ async function main() {
     const drawPointsArray = [];
     for (let i = 0; i < triangleNum; i++) {
         for (let j = 0; j < 3; j++) {
-            drawPointsArray.push([Number(objectVertices[i][j][0] / imageWidth * 2 - 1),// * (domainNum - 1) + start,
-                                Number(objectVertices[i][j][1] / imageHeight * 2 - 1)]);// * (domainNum - 1) + start];
+            drawPointsArray.push([Number(objectVertices[i][j][0] / imageWidth) * (domainNum - 1) + start,
+                                (Number(objectVertices[i][j][1] / imageHeight * 2 - 1) * (-1) + 1) / 2 * (domainNum - 1) + start]); // flip y
         }
     }
     const drawPointsTypedArray = new Float32Array(drawPointsArray.flat());
@@ -197,17 +197,16 @@ async function main() {
     const colorCoordsArray = [];
     for (let i = 0; i < colorTriangleNum; i++) {
         for (let j = 0; j < 3; j++) {
-            colorCoordsArray.push([Number(objectColors[i][j][0] / imageWidth * 2 - 1),// * (domainNum - 1) + start,
-            Number(objectColors[i][j][1] / imageHeight * 2 - 1)]);// * (domainNum - 1) + start];
+            colorCoordsArray.push([objectColors[i][j][0], objectColors[i][j][1], objectColors[i][j][2], 1]);
         }
     }
-    const colorCoordsTypedArray = new Float32Array(colorCoordsArray.flat());
+    const colorsTypedArray = new Float32Array(colorCoordsArray.flat());
     
     console.log('objectVertices', objectVertices);
     console.log('objectColors', objectColors);
     console.log('drawPointsArray', drawPointsArray);
     console.log('drawPointsTypedArray', drawPointsTypedArray);
-    console.log('colorCoordsTypedArray', colorCoordsTypedArray);
+    console.log('colorsTypedArray', colorsTypedArray);
 
     // intervals
     const intervalArray = [];
@@ -267,10 +266,10 @@ async function main() {
                     ],
                 },
                 {
-                    arrayStride: 2 * 4, // 2 floats, 4 bytes each
+                    arrayStride: 4 * 4, // 4 floats, 4 bytes each
                     stepMode: 'vertex',
                     attributes: [
-                        { shaderLocation: 1, offset: 0, format: 'float32x2' },  // texture coordinates
+                        { shaderLocation: 1, offset: 0, format: 'float32x4' },  // color
                     ],
                 },
             ],
@@ -388,36 +387,13 @@ async function main() {
         size: drawPointsTypedArray.byteLength,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
-    device.queue.writeBuffer(vertexPointBuffer, 0, drawPointsTypedArray);
     
     const vertexColorBuffer = device.createBuffer({
         label: 'vertex buffer',
-        size: colorCoordsTypedArray.byteLength,
+        size: colorsTypedArray.byteLength,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
-    device.queue.writeBuffer(vertexColorBuffer, 0, colorCoordsTypedArray);
-    
-    // PS input buffer
-    const texture = device.createTexture({
-        label: 'pingu image texture',
-        size: [imageWidth, imageHeight],
-        format: 'rgba8unorm',
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
-    });
-    device.queue.copyExternalImageToTexture(
-        { source: pinguImage },
-        { texture },
-        { width: imageWidth, height: imageHeight },
-    );
-    
-    const textureSampler = device.createSampler();
-    const textureBindGroup = device.createBindGroup({
-        layout: renderPipeline.getBindGroupLayout(0),
-        entries: [
-            { binding: 0, resource: textureSampler },
-            { binding: 1, resource: texture.createView() },
-        ],
-    });
+    device.queue.writeBuffer(vertexColorBuffer, 0, colorsTypedArray);
     
     // picking Id buffer
     const pickVertexBuffer = device.createBuffer({
@@ -548,33 +524,36 @@ async function main() {
     async function render() {
         const encoder = device.createCommandEncoder({ label: "encoder" });
         
-        // {
-        //     const computePass = encoder.beginComputePass({ label: "compute pass" });
+        {
+            const computePass = encoder.beginComputePass({ label: "compute pass" });
 
-        //     computePass.setPipeline(computePipeline);
+            computePass.setPipeline(computePipeline);
             
-        //     device.queue.writeBuffer(controlPointsBuffer, 0, cpsTypedArray);
-        //     computePass.setBindGroup(0, computeBindGroup);
-        //     computePass.dispatchWorkgroups(80);
-        //     computePass.end();
-        // }
+            device.queue.writeBuffer(controlPointsBuffer, 0, cpsTypedArray);
+            computePass.setBindGroup(0, computeBindGroup);
+            computePass.dispatchWorkgroups(80);
+            computePass.end();
+        }
         
         // copy compute shader results to map
         encoder.copyBufferToBuffer(outputBuffer, 0, computeResultBuffer, 0, computeResultBuffer.size);
         
         // copy compute shader results to vertex buffer
-        // encoder.copyBufferToBuffer(controlPointsBuffer, 0, vertexBuffer, 0, controlPointsSize);
-        // encoder.copyBufferToBuffer(outputBuffer, 0, vertexPointBuffer, 0, drawPointsTypedArray.byteLength);
+        encoder.copyBufferToBuffer(controlPointsBuffer, 0, vertexPointBuffer, 0, controlPointsSize);
+        encoder.copyBufferToBuffer(outputBuffer, 0, vertexPointBuffer, 0, drawPointsTypedArray.byteLength);
         
+        // draw image
+        // draw control points
         {
             renderPassDescriptor.colorAttachments[0].view = context.getCurrentTexture().createView();
             const renderPass = encoder.beginRenderPass(renderPassDescriptor);
 
             renderPass.setPipeline(renderPipeline);
-            renderPass.setBindGroup(0, textureBindGroup);
             renderPass.setVertexBuffer(0, vertexPointBuffer);
             renderPass.setVertexBuffer(1, vertexColorBuffer);
             renderPass.draw(drawPointsNum);
+            
+            
             renderPass.end();
         }
         
