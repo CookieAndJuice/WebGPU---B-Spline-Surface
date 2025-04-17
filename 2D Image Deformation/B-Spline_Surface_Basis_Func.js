@@ -111,10 +111,7 @@ async function main() {
     // Basic Setting
     const maxRange = 0.75;
     
-    let resolution = {
-        x: 100,
-        y: 100,
-    };
+    let controlPointSizeRatio = 100;
     let maxWidth = maxRange;
     let maxHeight = maxRange;
     if (aspect > 1)
@@ -147,11 +144,19 @@ async function main() {
     const controlPointUnitSize = 2 * 4;         // vec2<f32>
     const controlPointsSize = controlPointUnitSize * cpsHeight * cpsWidth;
     let controlPoints = [];
+    let points = array(
+        [-1, -1],      // left bottom
+        [1, -1],      // right bottom
+        [-1, 1],      // left top
+        [-1, 1],
+        [1, -1],
+        [1, 1],      // right top
+    );
     
     for (let v = 0; v < cpsHeight; ++v) {
         for (let u = 0; u < cpsWidth; ++u) {
-            
-            controlPoints.push([-maxWidth + offsetX * u, -maxHeight + offsetY * v]);
+            for (let i = 0; i < 6; ++i)
+                controlPoints.push([-maxWidth + offsetX * u, -maxHeight + offsetY * v]);
         }
     }
     const cpsTypedArray = new Float32Array(controlPoints.flat());
@@ -232,7 +237,7 @@ async function main() {
     // Shader
     const vertexShaderModule = device.createShaderModule({
         label: 'B Spline Surface Vertex Module',
-        code: vertexShaderSrc(aspect, resolution, cpsHeight * cpsWidth),
+        code: vertexShaderSrc(),
     });
 
     const fragmentShaderModule = device.createShaderModule({
@@ -242,7 +247,7 @@ async function main() {
 
     const idShaderModule = device.createShaderModule({
         label: 'Id Vertex Shader Module',
-        code: ShaderIdSrc(aspect, resolution, cpsHeight * cpsWidth),
+        code: ShaderIdSrc(),
     });
     
     const computeShaderModule = device.createShaderModule({
