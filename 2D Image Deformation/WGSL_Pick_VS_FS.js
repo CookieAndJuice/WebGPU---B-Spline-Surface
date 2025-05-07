@@ -1,5 +1,6 @@
 // Vertex Shader & Fragment Shader
-export function ShaderIdSrc(aspect, resolution) {
+export function ShaderIdSrc()
+{
     return /*wgsl*/`
         struct Vertices {
             @location(0) position: vec2f,
@@ -18,35 +19,15 @@ export function ShaderIdSrc(aspect, resolution) {
             vertex: Vertices
         ) -> VSOutput
         {
-            let points = array(
-                vec2f(-1, -1),      // left bottom
-                vec2f( 1, -1),      // right bottom
-                vec2f(-1,  1),      // left top
-                vec2f(-1,  1),
-                vec2f( 1, -1),
-                vec2f( 1,  1),      // right top
-            );
-
             var centerPoint = vertex.position;
             let boxPos = points[vIndex];
-            let aspect = ${aspect}f;
 
             var vsOut: VSOutput;
-            var resolution = vec2f(${resolution.x}f, ${resolution.y}f);
-
-            if (aspect > 1)
-            {
-                resolution = vec2f(resolution.x * aspect, resolution.y);
-            }
-            else
-            {
-                resolution = vec2f(resolution.x, resolution.y / aspect);
-            }
 
             var tempPosition = uniformMVP * vec3f(centerPoint, 1);
             centerPoint = tempPosition.xy;
             
-            vsOut.position = vec4f(centerPoint + boxPos / resolution, 0, 1);
+            vsOut.position = vec4f(centerPoint + boxPos, 0, 1);
             vsOut.color = vec4f(vec3(vertex.id), 1);
             
             return vsOut;

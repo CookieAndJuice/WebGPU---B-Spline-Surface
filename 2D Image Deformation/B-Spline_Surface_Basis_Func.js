@@ -144,22 +144,34 @@ async function main() {
     const controlPointUnitSize = 2 * 4;         // vec2<f32>
     const controlPointsSize = controlPointUnitSize * cpsHeight * cpsWidth;
     let controlPoints = [];
-    let points = array(
+    let points = [
         [-1, -1],      // left bottom
         [1, -1],      // right bottom
         [-1, 1],      // left top
         [-1, 1],
         [1, -1],
         [1, 1],      // right top
-    );
+    ];
     
+    // control points - positions in NDC for 2d
     for (let v = 0; v < cpsHeight; ++v) {
         for (let u = 0; u < cpsWidth; ++u) {
-            for (let i = 0; i < 6; ++i)
-                controlPoints.push([-maxWidth + offsetX * u, -maxHeight + offsetY * v]);
+            controlPoints.push([-maxWidth + offsetX * u, -maxHeight + offsetY * v]);
         }
     }
     const cpsTypedArray = new Float32Array(controlPoints.flat());
+    
+    // control points to box image
+    let controlPointsBoxes = [];
+    for (let v = 0; v < cpsHeight; ++v) {
+        for (let u = 0; u < cpsWidth; ++u) {
+            for (let i = 0; i < 6; ++i)
+                controlPointsBoxes.push([points[i][0] / 100 - maxWidth + offsetX * u, points[i][1] / 100 - maxHeight + offsetY * v]);
+        }
+    }
+    const cpsBoxTypedArray = new Float32Array(controlPointsBoxes.flat());
+    console.log('controlPointsBoxes', controlPointsBoxes);
+    console.log('controlPointsBoxesLength', controlPointsBoxes.length);
     
     // id values to rgb values
     const idTypedArray = new Float32Array(controlPoints.length);
@@ -181,10 +193,6 @@ async function main() {
     const start = degree - 1;                       // domain start point
     const end = knotArray.length - degree;          // domain end point
     const domainNum = end - start + 1;              // domain knots number
-    console.log(knotArray);
-    console.log(domainNum);
-    console.log(start);
-    console.log(end);
 
     // draw points
     const triangleNum = objectVertices.length;
@@ -197,6 +205,17 @@ async function main() {
         }
     }
     const drawPointsTypedArray = new Float32Array(drawPointsArray.flat());
+    console.log('drawPointsArray', drawPointsArray);
+    console.log('drawPointsNum', drawPointsNum);
+    
+    // colors
+    const controlPointsBoxesColorsLength = points.length * cpsHeight * cpsWidth;
+    const controlPointsColors = [];
+    for (let i = 0; i < controlPointsBoxesColorsLength; ++i) {
+        controlPointsColors.push([0, 0.7, 0.7, 1]);
+    }
+    console.log('controlPointsColors', controlPointsColors);
+    console.log('controlPointsBoxesColorsLength', controlPointsBoxesColorsLength);
     
     const colorTriangleNum = objectColors.length;
     const colorCoordsArray = [];
@@ -205,13 +224,13 @@ async function main() {
             colorCoordsArray.push([objectColors[i][j][0], objectColors[i][j][1], objectColors[i][j][2], 1]);
         }
     }
-    const colorsTypedArray = new Float32Array(colorCoordsArray.flat());
+    const colorsArray = controlPointsColors.concat(colorCoordsArray);
+    const colorsTypedArray = new Float32Array(colorsArray.flat());
     
-    console.log('objectVertices', objectVertices);
-    console.log('objectColors', objectColors);
-    console.log('drawPointsArray', drawPointsArray);
-    console.log('drawPointsTypedArray', drawPointsTypedArray);
-    console.log('colorsTypedArray', colorsTypedArray);
+    console.log('colorCoordsArray', colorCoordsArray);
+    console.log('colorCoordsArrayLength', colorCoordsArray.length);
+    console.log('colorsArray', colorsArray);
+    console.log('colorsArrayLength', colorsArray.length);
 
     // intervals
     const intervalArray = [];
@@ -386,10 +405,10 @@ async function main() {
         ]
     });
 
-    // VS input buffer    
+    // VS input buffer
     const vertexPointBuffer = device.createBuffer({
         label: 'vertex buffer',
-        size: drawPointsTypedArray.byteLength,
+        size: drawPointsTypedArray.byteLength + cpsBoxTypedArray.byteLength,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
     
@@ -544,8 +563,8 @@ async function main() {
         encoder.copyBufferToBuffer(outputBuffer, 0, computeResultBuffer, 0, computeResultBuffer.size);
         
         // copy compute shader results to vertex buffer
-        encoder.copyBufferToBuffer(controlPointsBuffer, 0, vertexPointBuffer, 0, controlPointsSize);
-        encoder.copyBufferToBuffer(outputBuffer, 0, vertexPointBuffer, 0, drawPointsTypedArray.byteLength);
+        device.queue.writeBuffer(vertexPointBuffer, 0, cpsBoxTypedArray);
+        encoder.copyBufferToBuffer(outputBuffer, 0, vertexPointBuffer, cpsBoxTypedArray.byteLength, drawPointsTypedArray.byteLength);
         
         // draw image
         // draw control points
