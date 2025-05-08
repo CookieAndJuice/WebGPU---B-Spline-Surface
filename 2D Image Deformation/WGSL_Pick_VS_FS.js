@@ -15,19 +15,13 @@ export function ShaderIdSrc()
         @group(0) @binding(0) var<uniform> uniformMVP: mat3x3f;
 
         @vertex fn vs(
-            @builtin(vertex_index) vIndex: u32,
             vertex: Vertices
         ) -> VSOutput
         {
-            var centerPoint = vertex.position;
-            let boxPos = points[vIndex];
-
             var vsOut: VSOutput;
 
-            var tempPosition = uniformMVP * vec3f(centerPoint, 1);
-            centerPoint = tempPosition.xy;
-            
-            vsOut.position = vec4f(centerPoint + boxPos, 0, 1);
+            var tempPosition = uniformMVP * vec3f(vertex.position, 1);
+            vsOut.position = vec4f(tempPosition.xy, 0, 1);
             vsOut.color = vec4f(vec3(vertex.id), 1);
             
             return vsOut;
