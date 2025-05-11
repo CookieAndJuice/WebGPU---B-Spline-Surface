@@ -2,6 +2,8 @@ import { vertexShaderSrc } from './WGSL_VS_FS.js';
 import { fragmentShaderSrc } from './WGSL_VS_FS.js';
 import { computeShaderSrc } from './WGSL_Compute_Shader_Basis_Func.js';
 import { ShaderIdSrc } from './WGSL_Pick_VS_FS.js';
+import { controlPointsVertexShaderSrc } from './WGSL_Ctrl_Points_VS_FS.js';
+import { controlPointsFragmentShaderSrc } from './WGSL_Ctrl_Points_VS_FS.js';
 import { vec2, vec3, vec4, mat3, utils } from 'wgpu-matrix';
 import objectVertices from './Image/vertices.json' with {type: "json"};
 import objectColors from './Image/colors.json' with {type: "json"};
@@ -48,7 +50,7 @@ async function SelectControlPoint(device, pipelineId, pickVertexBuffer, idVertex
     renderPass.setVertexBuffer(0, pickVertexBuffer);
     renderPass.setVertexBuffer(1, idVertexBuffer);
     renderPass.setBindGroup(0, bindGroupPick);
-    renderPass.draw(control_points.length);
+    renderPass.draw(6, control_points.length / 2);
     renderPass.end();
     
     encoder.copyTextureToBuffer(
@@ -111,6 +113,10 @@ async function main() {
     // Basic Setting
     const maxRange = 0.75;
     
+    let resolution = {
+        x: 100,
+        y: 100,
+    };
     let controlPointSizeRatio = 100;
     let maxWidth = maxRange;
     let maxHeight = maxRange;
@@ -143,16 +149,8 @@ async function main() {
     // TypedArrays
     // control points - positions in NDC for 2d
     const controlPointUnitSize = 2 * 4;         // vec2<f32>
-    const controlPointsSize = controlPointUnitSize * cpsHeight * cpsWidth;
+    const controlPointNum = cpsWidth * cpsHeight;
     let controlPoints = [];
-    let points = [
-        [-1, -1],      // left bottom
-        [1, -1],      // right bottom
-        [-1, 1],      // left top
-        [-1, 1],
-        [1, -1],
-        [1, 1],      // right top
-    ];
     
     // control points - positions in NDC for 2d
     for (let v = 0; v < cpsHeight; ++v) {
@@ -162,24 +160,10 @@ async function main() {
     }
     const cpsTypedArray = new Float32Array(controlPoints.flat());
     
-    // control points to box image
-    const controlPointsBoxesNum = points.length * cpsHeight * cpsWidth;
-    let controlPointsBoxes = [];
-    for (let v = 0; v < cpsHeight; ++v) {
-        for (let u = 0; u < cpsWidth; ++u) {
-            for (let i = 0; i < points.length; ++i)
-                controlPointsBoxes.push([points[i][0] / 100 - maxWidth + offsetX * u, points[i][1] / 100 - maxHeight + offsetY * v]);
-        }
-    }
-    const cpsBoxTypedArray = new Float32Array(controlPointsBoxes.flat());
-    console.log('controlPointsBoxes', controlPointsBoxes);
-    console.log('controlPointsBoxesLength', controlPointsBoxes.length);
-    
     // id values to rgb values
-    const idTypedArray = new Float32Array(controlPointsBoxesNum);
+    const idTypedArray = new Float32Array(controlPoints.length);
     for (let i = 0; i < controlPoints.length; i++)
-        for (let j = 0; j < points.length; j++)
-            idTypedArray.set([(i + 1) / 255.0], i);
+        idTypedArray.set([(i + 1) / 255.0], i);
 
     // degree
     const degree = 3;
@@ -211,14 +195,6 @@ async function main() {
     console.log('drawPointsNum', drawPointsNum);
     
     // colors
-    const controlPointsBoxesColorsLength = controlPointsBoxesNum;
-    const controlPointsColors = [];
-    for (let i = 0; i < controlPointsBoxesColorsLength; ++i) {
-        controlPointsColors.push([0, 0.7, 0.7, 1]);
-    }
-    console.log('controlPointsColors', controlPointsColors);
-    console.log('controlPointsBoxesColorsLength', controlPointsBoxesColorsLength);
-    
     const colorTriangleNum = objectColors.length;
     const colorCoordsArray = [];
     for (let i = 0; i < colorTriangleNum; i++) {
@@ -226,13 +202,7 @@ async function main() {
             colorCoordsArray.push([objectColors[i][j][0], objectColors[i][j][1], objectColors[i][j][2], 1]);
         }
     }
-    const colorsArray = colorCoordsArray.concat(controlPointsColors);
-    const colorsTypedArray = new Float32Array(colorsArray.flat());
-    
-    console.log('colorCoordsArray', colorCoordsArray);
-    console.log('colorCoordsArrayLength', colorCoordsArray.length);
-    console.log('colorsArray', colorsArray);
-    console.log('colorsArrayLength', colorsArray.length);
+    const colorsTypedArray = new Float32Array(colorCoordsArray.flat());
 
     // intervals
     const intervalArray = [];
@@ -265,10 +235,20 @@ async function main() {
         label: 'B Spline Surface Fragment Module',
         code: fragmentShaderSrc(),
     });
+    
+    const controlPointsVertexShaderModule = device.createShaderModule({
+        label: 'Control Points Vertex Module',
+        code: controlPointsVertexShaderSrc(aspect, resolution, cpsHeight * cpsWidth),
+    });
+
+    const controlPointsFragmentShaderModule = device.createShaderModule({
+        label: 'Control Points Fragment Module',
+        code: controlPointsFragmentShaderSrc(),
+    });
 
     const idShaderModule = device.createShaderModule({
         label: 'Id Vertex Shader Module',
-        code: ShaderIdSrc(),
+        code: ShaderIdSrc(aspect, resolution),
     });
     
     const computeShaderModule = device.createShaderModule({
@@ -302,6 +282,30 @@ async function main() {
         },
         fragment: {
             module: fragmentShaderModule,
+            targets: [{ format: presentationFormat }],
+        },
+        primitive: {
+            topology: 'triangle-list',
+        },
+    });
+    
+    const controlPointsPipeline = device.createRenderPipeline({
+        label: 'Control Points Render Pipeline',
+        layout: 'auto',
+        vertex: {
+            module: controlPointsVertexShaderModule,
+            buffers: [
+                {
+                    arrayStride: 2 * 4, // 2 floats, 4 bytes each
+                    stepMode: 'instance',
+                    attributes: [
+                        { shaderLocation: 0, offset: 0, format: 'float32x2' },  // position
+                    ],
+                },
+            ]
+        },
+        fragment: {
+            module: controlPointsFragmentShaderModule,
             targets: [{ format: presentationFormat }],
         },
         primitive: {
@@ -366,7 +370,7 @@ async function main() {
     // writeBuffer를 통해 데이터를 넣는 행위에도 usage: COPY_DST가 필요하다.
     const controlPointsBuffer = device.createBuffer({
         label: 'control_points buffer',
-        size: controlPointsSize,
+        size: cpsTypedArray.byteLength,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
     
@@ -413,7 +417,7 @@ async function main() {
     // VS input buffer
     const vertexPointBuffer = device.createBuffer({
         label: 'vertex buffer',
-        size: cpsBoxTypedArray.byteLength + drawPointsTypedArray.byteLength,
+        size: drawPointsTypedArray.byteLength,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
     
@@ -424,16 +428,22 @@ async function main() {
     });
     device.queue.writeBuffer(vertexColorBuffer, 0, colorsTypedArray);
     
+    const vertexControlPointsBuffer = device.createBuffer({
+        label: 'control points vertex buffer',
+        size: cpsTypedArray.byteLength,
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+    
     // picking Id buffer
     const pickVertexBuffer = device.createBuffer({
         label: 'picking vertex buffer',
-        size: cpsBoxTypedArray.byteLength,
+        size: cpsTypedArray.byteLength,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
     
     const idVertexBuffer = device.createBuffer({
         label: 'picking id vertex buffer',
-        size: cpsBoxTypedArray.byteLength,
+        size: cpsTypedArray.byteLength,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
     
@@ -451,7 +461,7 @@ async function main() {
     
     const idReadBuffer = device.createBuffer({
         label: "buffer to read the id",
-        size: cpsBoxTypedArray.byteLength,
+        size: cpsTypedArray.byteLength,
         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
     })
     
@@ -506,7 +516,7 @@ async function main() {
         
         // SelectControlPoint() is in range (1 ~ idLength) or 0. so it should subtract 1;
         selectedPointIndex = await SelectControlPoint(device, idRenderPipeline, pickVertexBuffer, idVertexBuffer,
-            idRenderTexture, bufferPicking, bindGroupPick, idMVPUniform, idReadBuffer, cpsBoxTypedArray, idTypedArray, clickPos);
+            idRenderTexture, bufferPicking, bindGroupPick, idMVPUniform, idReadBuffer, cpsTypedArray, idTypedArray, clickPos);
         selectedPointIndex--;
         
         canvas.addEventListener('mousemove', HandleMouseMove);
@@ -525,20 +535,7 @@ async function main() {
             dragStart = dragEnd;
 
             cpsTypedArray[selectedPointIndex * 2 + 0] += mouseDx;
-            cpsTypedArray[selectedPointIndex * 2 + 1] += mouseDy;1
-            
-            cpsBoxTypedArray[selectedPointIndex * 6 + 0] += mouseDx;
-            cpsBoxTypedArray[selectedPointIndex * 6 + 1] += mouseDy;
-            cpsBoxTypedArray[selectedPointIndex * 6 + 2] += mouseDx;
-            cpsBoxTypedArray[selectedPointIndex * 6 + 3] += mouseDy;
-            cpsBoxTypedArray[selectedPointIndex * 6 + 4] += mouseDx;
-            cpsBoxTypedArray[selectedPointIndex * 6 + 5] += mouseDy;
-            cpsBoxTypedArray[selectedPointIndex * 6 + 6] += mouseDx;
-            cpsBoxTypedArray[selectedPointIndex * 6 + 7] += mouseDy;
-            cpsBoxTypedArray[selectedPointIndex * 6 + 8] += mouseDx;
-            cpsBoxTypedArray[selectedPointIndex * 6 + 9] += mouseDy;
-            cpsBoxTypedArray[selectedPointIndex * 6 + 10] += mouseDx;
-            cpsBoxTypedArray[selectedPointIndex * 6 + 11] += mouseDy;
+            cpsTypedArray[selectedPointIndex * 2 + 1] += mouseDy;
         }
     }
 
@@ -582,18 +579,22 @@ async function main() {
         
         // copy compute shader results to vertex buffer
         encoder.copyBufferToBuffer(outputBuffer, 0, vertexPointBuffer, 0, drawPointsTypedArray.byteLength);
-        device.queue.writeBuffer(vertexPointBuffer, drawPointsTypedArray.byteLength, cpsBoxTypedArray);
+        device.queue.writeBuffer(vertexControlPointsBuffer, 0, cpsTypedArray);
         
-        // draw image
-        // draw control points
         {
             renderPassDescriptor.colorAttachments[0].view = context.getCurrentTexture().createView();
             const renderPass = encoder.beginRenderPass(renderPassDescriptor);
 
+            // draw image
             renderPass.setPipeline(renderPipeline);
             renderPass.setVertexBuffer(0, vertexPointBuffer);
             renderPass.setVertexBuffer(1, vertexColorBuffer);
-            renderPass.draw(drawPointsNum + controlPointsBoxesNum);
+            renderPass.draw(drawPointsNum);
+            
+            // draw control points
+            renderPass.setPipeline(controlPointsPipeline);
+            renderPass.setVertexBuffer(0, vertexControlPointsBuffer);
+            renderPass.draw(6, controlPointNum);
             
             renderPass.end();
         }
