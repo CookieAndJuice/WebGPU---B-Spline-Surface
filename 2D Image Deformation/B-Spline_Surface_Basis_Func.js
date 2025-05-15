@@ -238,7 +238,7 @@ async function main() {
     
     const controlPointsVertexShaderModule = device.createShaderModule({
         label: 'Control Points Vertex Module',
-        code: controlPointsVertexShaderSrc(aspect, resolution, cpsHeight * cpsWidth),
+        code: controlPointsVertexShaderSrc(aspect, resolution),
     });
 
     const controlPointsFragmentShaderModule = device.createShaderModule({
@@ -443,7 +443,7 @@ async function main() {
     
     const idVertexBuffer = device.createBuffer({
         label: 'picking id vertex buffer',
-        size: cpsTypedArray.byteLength,
+        size: idTypedArray.byteLength,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
     
@@ -461,7 +461,7 @@ async function main() {
     
     const idReadBuffer = device.createBuffer({
         label: "buffer to read the id",
-        size: cpsTypedArray.byteLength,
+        size: idTypedArray.byteLength,
         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
     })
     

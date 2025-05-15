@@ -2,6 +2,8 @@ import { vertexShaderSrc } from './WGSL VS_FS.js';
 import { fragmentShaderSrc } from './WGSL VS_FS.js';
 import { computeShaderSrc } from './WGSL Compute Shader.js';
 import { ShaderIdSrc } from './WGSL Pick VS_FS.js';
+import { controlPointsVertexShaderSrc } from './WGSL VS_FS Control_Points.js';
+import { controlPointsFragmentShaderSrc } from './WGSL VS_FS Control_Points.js';
 import *as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { vec2, vec3, vec4, mat3, mat4, utils } from 'wgpu-matrix';
@@ -31,6 +33,73 @@ async function load_gltf(url) {
     return root.scene.children[0];
 }
 
+async function SelectControlPoint(device, pipelineId, pickVertexBuffer, idVertexBuffer, idRenderTexture,
+    bufferPicking, bindGroupPick, idMVPUniform, idReadBuffer, control_points, idTypedArray, clickPoint) {
+    const encoder = device.createCommandEncoder();
+    const renderPass = encoder.beginRenderPass({
+        label: "rener pass to render id",
+        colorAttachments: [{
+            view: idRenderTexture.createView(),
+            loadOp: "clear",
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+            storeOp: "store",
+        }],
+    });
+
+    renderPass.setPipeline(pipelineId);
+
+    // control_points: canvas size
+    // clickPoint: canvas size
+    // need to make MVP
+
+    let MVP = mat3.translation([-clickPoint.x, -clickPoint.y, 0]);
+    device.queue.writeBuffer(idMVPUniform, 0, MVP);
+
+    // id를 uniform buffer로 하지 말고 vertex attribute로 만들기
+    device.queue.writeBuffer(pickVertexBuffer, 0, control_points);
+    device.queue.writeBuffer(idVertexBuffer, 0, idTypedArray);
+
+    renderPass.setVertexBuffer(0, pickVertexBuffer);
+    renderPass.setVertexBuffer(1, idVertexBuffer);
+    renderPass.setBindGroup(0, bindGroupPick);
+    renderPass.draw(6, control_points.length / 2);
+    renderPass.end();
+
+    encoder.copyTextureToBuffer(
+        {
+            texture: idRenderTexture,
+            origin: [0, 0]
+        },
+        {
+            buffer: bufferPicking,
+        },
+        {
+            width: 1,
+        },
+    );
+
+    // encoder.copyBufferToBuffer(idVertexBuffer, 0, idReadBuffer, 0, idReadBuffer.size);
+
+    const commandBuffer = encoder.finish();
+    device.queue.submit([commandBuffer]);
+
+    await bufferPicking.mapAsync(GPUMapMode.READ);
+
+    const pixel = new Uint8Array(bufferPicking.getMappedRange().slice());
+    console.log(`pixel : ${pixel}`);
+
+    bufferPicking.unmap();
+
+    // await idReadBuffer.mapAsync(GPUMapMode.READ);
+
+    // const idBufferArray = new Float32Array(idReadBuffer.getMappedRange());
+    // console.log(idBufferArray);
+
+    // idReadBuffer.unmap();
+
+    return pixel[0];
+}
+
 async function main() {  
     const adapter = await navigator.gpu?.requestAdapter();
     const device = await adapter?.requestDevice();
@@ -54,9 +123,9 @@ async function main() {
     
     // Basic Setting
     let sizeRatio = {
-        x: 2,
-        y: 2,
-        z: 2
+        x: 100,
+        y: 100,
+        z: 100
     };
     
     // load model file
@@ -82,6 +151,7 @@ async function main() {
         }
     }
     const controlPointUnitSize = 4 * 4;         // position - vec4<f32>
+    const controlPointNum = cpsWidthX * cpsWidthY * cpsHeightZ;
     const controlPointsSize = controlPointUnitSize * controlPoints.length;
     const cpsTypedArray = new Float32Array(controlPoints.flat());
     
@@ -174,6 +244,21 @@ async function main() {
         code: fragmentShaderSrc(),
     });
     
+    const controlPointsVertexShaderModule = device.createShaderModule({
+            label: 'Control Points Vertex Module',
+            code: controlPointsVertexShaderSrc(sizeRatio),
+    });
+
+    const controlPointsFragmentShaderModule = device.createShaderModule({
+        label: 'Control Points Fragment Module',
+        code: controlPointsFragmentShaderSrc(),
+    });
+
+    const idShaderModule = device.createShaderModule({
+        label: 'Id Vertex Shader Module',
+        code: ShaderIdSrc(sizeRatio),
+    });
+    
     const computeShaderModule = device.createShaderModule({
         label: 'B Spline Surface Compute Module',
         code: computeShaderSrc(degree, cpsWidthX, cpsWidthY, cpsHeightZ, xResultLength, tempWidth, start, end),
@@ -206,6 +291,75 @@ async function main() {
         fragment: {
             module: fragmentShaderModule,
             targets: [{ format: presentationFormat }],
+        },
+        primitive: {
+            topology: 'triangle-list',
+            cullMode: 'back',
+        },
+        depthStencil: {
+            depthWriteEnabled: true,
+            depthCompare: 'less',
+            format: 'depth24plus',
+        }
+    });
+    
+    const controlPointsPipeline = device.createRenderPipeline({
+        label: 'Control Points Render Pipeline',
+        layout: 'auto',
+        vertex: {
+            module: controlPointsVertexShaderModule,
+            buffers: [
+                {
+                    arrayStride: 4 * 4, // 3 floats, 4 bytes each
+                    stepMode: 'instance',
+                    attributes: [
+                        { shaderLocation: 0, offset: 0, format: 'float32x2' },  // position
+                    ],
+                },
+            ]
+        },
+        fragment: {
+            module: controlPointsFragmentShaderModule,
+            targets: [{ format: presentationFormat }],
+        },
+        primitive: {
+            topology: 'triangle-list',
+            cullMode: 'back',
+        },
+        depthStencil: {
+            depthWriteEnabled: true,
+            depthCompare: 'less',
+            format: 'depth24plus',
+        }
+    });
+    
+    const idRenderPipeline = device.createRenderPipeline({
+        label: 'Id Render Pipeline',
+        layout: 'auto',
+        vertex: {
+            module: idShaderModule,
+            entryPoint: 'vs',
+            buffers: [
+                {
+                    arrayStride: 4 * 4, // 2 floats, 4 bytes each
+                    stepMode: 'instance',
+                    attributes: [
+                        { shaderLocation: 0, offset: 0, format: 'float32x2' },  // position
+                    ],
+                },
+                {
+                    arrayStride: 1 * 4, // 1 floats, 4bytes each
+                    stepMode: 'instance',
+                    attributes: [
+                        { shaderLocation: 1, offset: 0, format: 'float32' },    // id
+                    ]
+                }
+            ],
+        },
+        fragment: {
+            module: idShaderModule,
+            entryPoint: 'fs',
+            targets: [{ format: 'r8unorm' }],
         },
         primitive: {
             topology: 'triangle-list',
@@ -310,6 +464,12 @@ async function main() {
     });
     device.queue.writeBuffer(indexBuffer, 0, sphereIndicesArray);
     
+    const vertexControlPointsBuffer = device.createBuffer({
+        label: 'vertex control points buffer',
+        size: cpsTypedArray.byteLength,
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+    
     const mvpSize = 4 * 4 * 4;
     const lightSize = 4 * 4;
     const eyeSize = 4 * 4;
@@ -349,6 +509,128 @@ async function main() {
     
     // texture buffers
     let depthTexture;
+    
+    // picking Id buffer
+    const pickVertexBuffer = device.createBuffer({
+        label: 'picking vertex buffer',
+        size: cpsTypedArray.byteLength,
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+
+    const idVertexBuffer = device.createBuffer({
+        label: 'picking id vertex buffer',
+        size: idTypedArray.byteLength,
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+    });
+
+    const idMVPUniform = device.createBuffer({
+        label: 'picking MVP uniform buffer',
+        size: 4 * 4 * 4,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    })
+
+    const bufferPicking = device.createBuffer({
+        label: "buffer to read the pixel at the mouse location",
+        size: 4,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+
+    const idReadBuffer = device.createBuffer({
+        label: "buffer to read the id",
+        size: idTypedArray.byteLength,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    })
+
+    const bindGroupPick = device.createBindGroup({
+        label: "picking id bindgroup",
+        layout: idRenderPipeline.getBindGroupLayout(0),
+        entries: [
+            { binding: 0, resource: { buffer: idMVPUniform } },
+        ],
+    });
+    
+    // canvas mouse drag values
+    let drag = false;
+    let clickPos = { x: -100, y: -100 };
+    let dragStart = { x: -100, y: -100 };
+    let dragEnd = { x: -100, y: -100 };
+    let mouseDx = 0;
+    let mouseDy = 0;
+    let selectedPointIndex = -1;
+
+    // canvas mouse event
+    canvas.addEventListener('mousedown', async function (event) {
+        clickPos = {
+            x: event.clientX / canvas.width * 2 - 1,
+            y: -(event.clientY / canvas.height * 2 - 1)
+        }
+        // clickPos = {
+        //     x: event.clientX,
+        //     y: event.clientY
+        // }
+        dragStart = {
+            x: event.clientX / canvas.width * 2 - 1,
+            y: -(event.clientY / canvas.height * 2 - 1)
+        }
+        dragEnd = {
+            x: event.clientX / canvas.width * 2 - 1,
+            y: -(event.clientY / canvas.height * 2 - 1)
+        }
+
+        console.log(`clickPos: ${clickPos.x}, ${clickPos.y}`);
+
+        const idRenderTexture = device.createTexture({
+            size: [1, 1],
+            format: 'r8unorm',
+            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+        });
+
+        drag = true;
+
+        // SelectControlPoint() is in range (1 ~ idLength) or 0. so it should subtract 1;
+        //selectedPointIndex = await SelectControlPoint(device, idRenderPipeline, pickVertexBuffer, idVertexBuffer,
+        //    idRenderTexture, bufferPicking, bindGroupPick, idMVPUniform, idReadBuffer, cpsTypedArray, idTypedArray, clickPos);
+        //selectedPointIndex--;
+
+        canvas.addEventListener('mousemove', HandleMouseMove);
+        canvas.addEventListener('mouseup', HandleMouseUp);
+    });
+
+    function HandleMouseMove(event) {
+        if (drag && selectedPointIndex !== -1) {
+            dragEnd = {
+                x: event.clientX / canvas.width * 2 - 1,
+                y: -(event.clientY / canvas.height * 2 - 1)
+            }
+
+            mouseDx = dragEnd.x - dragStart.x;
+            mouseDy = dragEnd.y - dragStart.y;
+            dragStart = dragEnd;
+
+            cpsTypedArray[selectedPointIndex * 2 + 0] += mouseDx;
+            cpsTypedArray[selectedPointIndex * 2 + 1] += mouseDy;
+        }
+    }
+
+    function HandleMouseUp() {
+        if (drag) {
+            dragEnd = {
+                x: -100,
+                y: -100
+            }
+            dragStart = {
+                x: -100,
+                y: -100
+            }
+            mouseDx = 0;
+            mouseDy = 0;
+            drag = false;
+            selectedPointIndex = -1;
+
+            canvas.removeEventListener('mousemove', HandleMouseMove);
+            canvas.removeEventListener('mouseup', HandleMouseUp);
+        }
+    }
 
     // Render
     async function render() {
@@ -370,9 +652,7 @@ async function main() {
         
         // copy compute shader results to vertex buffer
         encoder.copyBufferToBuffer(outputBuffer, 0, vertexPointBuffer, 0, drawPointsSize);
-        
-        // device.queue.writeBuffer(vertexPointBuffer, 0, drawPointsTypedArray);
-        // device.queue.writeBuffer(vertexPointBuffer, 0, spherePointsArray);
+        device.queue.writeBuffer(vertexControlPointsBuffer, 0, cpsTypedArray);
         
         {
             const canvasTexture = context.getCurrentTexture();
@@ -394,6 +674,7 @@ async function main() {
             
             const renderPass = encoder.beginRenderPass(renderPassDescriptor);
 
+            // draw model
             renderPass.setPipeline(renderPipeline);
             renderPass.setVertexBuffer(0, vertexPointBuffer);
             renderPass.setVertexBuffer(1, vertexNormalBuffer);
@@ -401,6 +682,11 @@ async function main() {
             renderPass.setBindGroup(0, bindGroup);
             renderPass.drawIndexed(sphereIndicesArray.length);
 
+            // draw control points
+            renderPass.setPipeline(controlPointsPipeline);
+            renderPass.setVertexBuffer(0, vertexControlPointsBuffer);
+            renderPass.draw(6, controlPointNum);
+            
             renderPass.end();
         }
         

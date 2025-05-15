@@ -1,5 +1,5 @@
 // Vertex Shader & Fragment Shader
-export function ShaderIdSrc(aspect, sizeRatio) {
+export function ShaderIdSrc(sizeRatio) {
     return /*wgsl*/`
         struct Vertices {
             @location(0) position: vec3f,

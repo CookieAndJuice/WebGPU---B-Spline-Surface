@@ -1,11 +1,11 @@
 // Vertex Shader & Fragment Shader
-export function vertexShaderSrc(aspect, sizeRatio, controlPointsNum)
+export function controlPointsVertexShaderSrc(sizeRatio)
 {
     return /*wgsl*/`
         struct Vertices {
             @location(0) position: vec3f,
         };
-    
+
         struct VSOutput {
             @builtin(position) position: vec4f,
             @location(0) color: vec4f,
@@ -17,27 +17,33 @@ export function vertexShaderSrc(aspect, sizeRatio, controlPointsNum)
             vertex: Vertices
         ) -> VSOutput
         {
+            let points = array(
+                vec3f(-1,  1, -1),
+                vec3f( 1, -1, -1),
+                vec3f( 1, -1, -1),
+                vec3f( 1,  1, -1),
+                vec3f(-1,  1,  1),
+                vec3f(-1, -1,  1),
+                vec3f( 1, -1,  1),
+                vec3f( 1,  1,  1),
+            );
+            
             var centerPoint = vertex.position;
+            let boxPos = points[vIndex];
 
             var vsOut: VSOutput;
             var sizeRatio = vec3f(${sizeRatio.x}f, ${sizeRatio.y}f, ${sizeRatio.z}f);
             
-            vsOut.position = vec4f(centerPoint / sizeRatio, 1);
-            if (${controlPointsNum} <= instanceIndex)
-            {
-                vsOut.color = vec4f(0, 0, 0, 1);
-            }
-            else
-            {
-                vsOut.color = vec4f(0, 0.7, 0.7, 1);
-            }
+            vsOut.position = vec4f(centerPoint + boxPos / sizeRatio, 1);
+            
+            vsOut.color = vec4f(1, 164 / 255.0, 179 / 255.0, 1);
             
             return vsOut;
         }
     `;
 }
 
-export function fragmentShaderSrc()
+export function controlPointsFragmentShaderSrc()
 {
     return /*wgsl*/`
         struct FSInput {
