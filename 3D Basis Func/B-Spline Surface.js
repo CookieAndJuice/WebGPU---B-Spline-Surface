@@ -8,6 +8,38 @@ import *as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { vec2, vec3, vec4, mat3, mat4, utils } from 'wgpu-matrix';
 
+// https://github.com/g-truc/glm/blob/master/glm/ext/matrix_projection.inl
+function project(p_obj, MVP, viewport) {
+    let tmp = vec4.transformMat4(p_obj, MVP);
+    tmp = tmp.map((x) => x / tmp[3]); // tmp /= tmp[3]
+    for (let i = 0; i < 2; i++) {
+        tmp[i] = (0.5 * tmp[i] + 0.5) * viewport[i + 2] + viewport[i];
+    }
+    return tmp;
+}
+
+// https://github.com/g-truc/glm/blob/master/glm/ext/matrix_projection.inl
+function unproject(p_win, MVP, viewport) {
+    let MVP_inv = mat4.invert(MVP);
+    let tmp = mat4.clone(p_win);
+
+    for (let i = 0; i < 2; i++)
+        tmp[i] = 2.0 * (tmp[i] - viewport[i]) / viewport[i + 2] - 1.0;
+
+    let p_obj = vec4.transformMat4(tmp, MVP_inv);
+
+    p_obj = p_obj.map((x) => x / p_obj[3]);
+
+    return p_obj;
+}
+
+function unproject_vector(vec_win, MVP, viewport) {
+    let org_win = project([0, 0, 0, 1], MVP, viewport);
+    let vec = unproject([org_win[0] + vec_win[0], org_win[1] + vec_win[1], org_win[2] + vec_win[2], 1],
+        MVP, viewport);
+    return vec;
+}
+
 function findInterval(knotList, point) {
     let returnIndex = 0;
     let floorPoint = Math.floor(point);
@@ -123,9 +155,9 @@ async function main() {
     
     // Basic Setting
     let sizeRatio = {
-        x: 100,
-        y: 100,
-        z: 100
+        x: 20,
+        y: 20,
+        z: 20
     };
     
     // load model file
@@ -313,7 +345,7 @@ async function main() {
                     arrayStride: 4 * 4, // 3 floats, 4 bytes each
                     stepMode: 'instance',
                     attributes: [
-                        { shaderLocation: 0, offset: 0, format: 'float32x2' },  // position
+                        { shaderLocation: 0, offset: 0, format: 'float32x4' },  // position
                     ],
                 },
             ]
@@ -487,6 +519,14 @@ async function main() {
         ],
     });
     
+    const controlPointsBindGroup = device.createBindGroup({
+        label: 'bindGroup for control points render pipeline',
+        layout: controlPointsPipeline.getBindGroupLayout(0),
+        entries: [
+            { binding: 0, resource: { buffer: uniformBuffer } },
+        ],
+    });
+    
     // uniform buffer datas
     const eye = [0, 0, 10];
     const target = [0, 0, 0];
@@ -498,14 +538,12 @@ async function main() {
     const near = 0.1;
     const far = 100.0;
     
-    const view = mat4.lookAt(eye, target, up);
-    const projection = mat4.perspective(fovy, aspect, near, far);
-    const viewProjection = mat4.multiply(projection, view);
+    let view = mat4.lookAt(eye, target, up);
+    let projection = mat4.perspective(fovy, aspect, near, far);
+    let viewProjection = mat4.multiply(projection, view);
     const lightDirection = new Float32Array([-0.5, -0.5, -0.5]);
     
-    device.queue.writeBuffer(uniformBuffer, 0, viewProjection);
-    device.queue.writeBuffer(uniformBuffer, mvpSize, lightDirection);
-    device.queue.writeBuffer(uniformBuffer, mvpSize + lightSize, eyePosition);
+    const length2 = (p) => Math.sqrt(p[0] * p[0] + p[1] * p[1]);
     
     // texture buffers
     let depthTexture;
@@ -597,18 +635,33 @@ async function main() {
     });
 
     function HandleMouseMove(event) {
-        if (drag && selectedPointIndex !== -1) {
-            dragEnd = {
-                x: event.clientX / canvas.width * 2 - 1,
-                y: -(event.clientY / canvas.height * 2 - 1)
+        if (drag) {
+            // control poitns move code
+            if (selectedPointIndex !== -1) {
+                dragEnd = {
+                    x: event.clientX / canvas.width * 2 - 1,
+                    y: -(event.clientY / canvas.height * 2 - 1)
+                }
+
+                mouseDx = dragEnd.x - dragStart.x;
+                mouseDy = dragEnd.y - dragStart.y;
+                dragStart = dragEnd;
+
+                cpsTypedArray[selectedPointIndex * 2 + 0] += mouseDx;
+                cpsTypedArray[selectedPointIndex * 2 + 1] += mouseDy;
             }
-
-            mouseDx = dragEnd.x - dragStart.x;
-            mouseDy = dragEnd.y - dragStart.y;
-            dragStart = dragEnd;
-
-            cpsTypedArray[selectedPointIndex * 2 + 0] += mouseDx;
-            cpsTypedArray[selectedPointIndex * 2 + 1] += mouseDy;
+            
+            // camera move code
+            let offset = [event.movementX, event.movementY];
+            if (offset[0] != 0 || offset[1] != 0) // For some reason, the offset becomes zero sometimes...
+            {
+                viewProjection = mat4.clone(projection);
+                viewProjection = mat4.multiply(viewProjection, view);
+                let axis = unproject_vector([offset[1], offset[0], 0], viewProjection,
+                    [0, 0, canvas.clientWidth, canvas.clientHeight]);
+                view = mat4.rotate(view, [axis[0], axis[1], axis[2]], utils.degToRad(length2(offset)));
+            }
+            viewProjection = mat4.multiply(projection, view);
         }
     }
 
@@ -654,6 +707,11 @@ async function main() {
         encoder.copyBufferToBuffer(outputBuffer, 0, vertexPointBuffer, 0, drawPointsSize);
         device.queue.writeBuffer(vertexControlPointsBuffer, 0, cpsTypedArray);
         
+        // mvp matrix for render pipeline
+        device.queue.writeBuffer(uniformBuffer, 0, viewProjection);
+        device.queue.writeBuffer(uniformBuffer, mvpSize, lightDirection);
+        device.queue.writeBuffer(uniformBuffer, mvpSize + lightSize, eyePosition);
+        
         {
             const canvasTexture = context.getCurrentTexture();
             renderPassDescriptor.colorAttachments[0].view = canvasTexture.createView();
@@ -678,6 +736,7 @@ async function main() {
             renderPass.setPipeline(renderPipeline);
             renderPass.setVertexBuffer(0, vertexPointBuffer);
             renderPass.setVertexBuffer(1, vertexNormalBuffer);
+            
             renderPass.setIndexBuffer(indexBuffer, "uint16");
             renderPass.setBindGroup(0, bindGroup);
             renderPass.drawIndexed(sphereIndicesArray.length);
@@ -685,6 +744,7 @@ async function main() {
             // draw control points
             renderPass.setPipeline(controlPointsPipeline);
             renderPass.setVertexBuffer(0, vertexControlPointsBuffer);
+            renderPass.setBindGroup(0, controlPointsBindGroup);
             renderPass.draw(6, controlPointNum);
             
             renderPass.end();
