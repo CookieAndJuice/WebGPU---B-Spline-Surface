@@ -4,6 +4,8 @@ import { computeShaderSrc } from './WGSL_Compute_Shader_Basis_Func.js';
 import { ShaderIdSrc } from './WGSL_Pick_VS_FS.js';
 import { controlPointsVertexShaderSrc } from './WGSL_Ctrl_Points_VS_FS.js';
 import { controlPointsFragmentShaderSrc } from './WGSL_Ctrl_Points_VS_FS.js';
+import *as THREE from 'three'
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { vec2, vec3, vec4, mat3, utils } from 'wgpu-matrix';
 import objectVertices from './Image/vertices.json' with {type: "json"};
 import objectColors from './Image/colors.json' with {type: "json"};
@@ -18,6 +20,19 @@ function findInterval(knotList, point) {
     }
 
     return returnIndex;
+}
+
+async function load_gltf(url) {
+    const loader = new GLTFLoader();
+
+    const root = await new Promise((resolve, reject) => {
+        loader.load(url,
+            (model) => { resolve(model); },
+            null,
+            (error) => { reject(error); });
+    });
+
+    return root.scene.children[0];
 }
 
 async function SelectControlPoint(device, pipelineId, pickVertexBuffer, idVertexBuffer, idRenderTexture,
@@ -136,6 +151,10 @@ async function main() {
         const blob = await res.blob();
         return await createImageBitmap(blob, { colorSpaceConversion: 'none' });
     }
+    
+    // load model file
+    const ModelObject = await load_gltf('Image/3dpea.com_triangulated-image.glb');
+    console.log(ModelObject);
     
     // image
     const pinguImageUrl = './Image/pingu.jpg';

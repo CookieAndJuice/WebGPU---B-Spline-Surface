@@ -67,6 +67,21 @@ async function load_gltf(url) {
 
 async function SelectControlPoint(device, pipelineId, pickVertexBuffer, idVertexBuffer, idRenderTexture,
     bufferPicking, bindGroupPick, idMVPUniform, idReadBuffer, control_points, idTypedArray, clickPoint) {
+        
+    let depthTexture;
+    if (!depthTexture ||
+        depthTexture.width !== idRenderTexture.width ||
+        depthTexture.height !== idRenderTexture.height) {
+        if (depthTexture) {
+            depthTexture.destroy();
+        }
+        depthTexture = device.createTexture({
+            size: [idRenderTexture.width, idRenderTexture.height],
+            format: 'depth24plus',
+            usage: GPUTextureUsage.RENDER_ATTACHMENT,
+        });
+    }
+    
     const encoder = device.createCommandEncoder();
     const renderPass = encoder.beginRenderPass({
         label: "rener pass to render id",
@@ -76,6 +91,12 @@ async function SelectControlPoint(device, pipelineId, pickVertexBuffer, idVertex
             clearValue: { r: 0, g: 0, b: 0, a: 1 },
             storeOp: "store",
         }],
+        depthStencilAttachment: {
+            view: depthTexture.createView(),
+            depthClearValue: 1.0,
+            depthLoadOp: 'clear',
+            depthStoreOp: 'store',
+        },
     });
 
     renderPass.setPipeline(pipelineId);
@@ -94,7 +115,7 @@ async function SelectControlPoint(device, pipelineId, pickVertexBuffer, idVertex
     renderPass.setVertexBuffer(0, pickVertexBuffer);
     renderPass.setVertexBuffer(1, idVertexBuffer);
     renderPass.setBindGroup(0, bindGroupPick);
-    renderPass.draw(6, control_points.length / 2);
+    renderPass.draw(36, control_points.length / 4);
     renderPass.end();
 
     encoder.copyTextureToBuffer(
@@ -342,7 +363,7 @@ async function main() {
             module: controlPointsVertexShaderModule,
             buffers: [
                 {
-                    arrayStride: 4 * 4, // 3 floats, 4 bytes each
+                    arrayStride: 4 * 4, // 3 floats, 1 padding, 4 bytes each
                     stepMode: 'instance',
                     attributes: [
                         { shaderLocation: 0, offset: 0, format: 'float32x4' },  // position
@@ -373,10 +394,10 @@ async function main() {
             entryPoint: 'vs',
             buffers: [
                 {
-                    arrayStride: 4 * 4, // 2 floats, 4 bytes each
+                    arrayStride: 4 * 4, // 3 floats, 1 padding, 4 bytes each
                     stepMode: 'instance',
                     attributes: [
-                        { shaderLocation: 0, offset: 0, format: 'float32x2' },  // position
+                        { shaderLocation: 0, offset: 0, format: 'float32x4' },  // position
                     ],
                 },
                 {
@@ -626,9 +647,9 @@ async function main() {
         drag = true;
 
         // SelectControlPoint() is in range (1 ~ idLength) or 0. so it should subtract 1;
-        //selectedPointIndex = await SelectControlPoint(device, idRenderPipeline, pickVertexBuffer, idVertexBuffer,
-        //    idRenderTexture, bufferPicking, bindGroupPick, idMVPUniform, idReadBuffer, cpsTypedArray, idTypedArray, clickPos);
-        //selectedPointIndex--;
+        selectedPointIndex = await SelectControlPoint(device, idRenderPipeline, pickVertexBuffer, idVertexBuffer,
+           idRenderTexture, bufferPicking, bindGroupPick, idMVPUniform, idReadBuffer, cpsTypedArray, idTypedArray, clickPos);
+        selectedPointIndex--;
 
         canvas.addEventListener('mousemove', HandleMouseMove);
         canvas.addEventListener('mouseup', HandleMouseUp);
@@ -745,7 +766,7 @@ async function main() {
             renderPass.setPipeline(controlPointsPipeline);
             renderPass.setVertexBuffer(0, vertexControlPointsBuffer);
             renderPass.setBindGroup(0, controlPointsBindGroup);
-            renderPass.draw(6, controlPointNum);
+            renderPass.draw(36, controlPointNum);
             
             renderPass.end();
         }

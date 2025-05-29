@@ -15,9 +15,70 @@ export function ShaderIdSrc(sizeRatio) {
 
         @vertex fn vs(
             @builtin(vertex_index) vIndex: u32,
+            @builtin(instance_index) instanceIndex: u32,
             vertex: Vertices
         ) -> VSOutput
         {
+            let points = array(
+                vec3f( 1,  1,  1), // 0
+                vec3f( 1, -1,  1), // 2
+                vec3f( 1,  1, -1), // 1
+
+                vec3f( 1,  1, -1), // 1
+                vec3f( 1, -1,  1), // 2
+                vec3f( 1, -1, -1), // 3
+
+                vec3f( 1,  1,  1), // 0
+                vec3f( 1,  1, -1), // 1
+                vec3f(-1,  1, -1), // 5
+
+                vec3f(-1,  1, -1), // 5
+                vec3f(-1,  1,  1), // 4
+                vec3f( 1,  1,  1), // 0
+
+                vec3f( 1, -1,  1), // 2
+                vec3f(-1, -1,  1), // 6
+                vec3f( 1, -1, -1), // 3
+
+                vec3f(-1, -1,  1), // 6
+                vec3f(-1, -1, -1), // 7
+                vec3f( 1, -1, -1), // 3
+
+                vec3f( 1, -1,  1), // 2
+                vec3f( 1,  1,  1), // 0
+                vec3f(-1,  1,  1), // 4
+
+                vec3f(-1,  1,  1), // 4
+                vec3f(-1, -1,  1), // 6
+                vec3f( 1, -1,  1), // 2
+
+                vec3f( 1, -1, -1), // 3
+                vec3f(-1, -1, -1), // 7
+                vec3f(-1,  1, -1), // 5
+
+                vec3f( 1, -1, -1), // 3
+                vec3f(-1,  1, -1), // 5
+                vec3f( 1,  1, -1), // 1
+
+                vec3f(-1,  1,  1), // 4
+                vec3f(-1,  1, -1), // 5
+                vec3f(-1, -1, -1), // 7
+
+                vec3f(-1, -1,  1), // 6
+                vec3f(-1,  1,  1), // 4
+                vec3f(-1, -1, -1), // 7
+            );
+
+
+            // vec3f( 1,  1,  1), // 0
+            // vec3f( 1,  1, -1), // 1
+            // vec3f( 1, -1,  1), // 2
+            // vec3f( 1, -1, -1), // 3
+            // vec3f(-1,  1,  1), // 4
+            // vec3f(-1,  1, -1), // 5
+            // vec3f(-1, -1,  1), // 6
+            // vec3f(-1, -1, -1), // 7
+            
             var centerPoint = vertex.position;
 
             var vsOut: VSOutput;
