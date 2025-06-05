@@ -66,7 +66,7 @@ async function load_gltf(url) {
 }
 
 async function SelectControlPoint(device, pipelineId, pickVertexBuffer, idVertexBuffer, idRenderTexture,
-    bufferPicking, bindGroupPick, idMVPUniform, idReadBuffer, control_points, idTypedArray, clickPoint) {
+    bufferPicking, bindGroupPick, idMVPUniform, idReadBuffer, control_points, idTypedArray, clickPoint, viewProjection) {
         
     let depthTexture;
     if (!depthTexture ||
@@ -105,8 +105,7 @@ async function SelectControlPoint(device, pipelineId, pickVertexBuffer, idVertex
     // clickPoint: canvas size
     // need to make MVP
 
-    let MVP = mat3.translation([-clickPoint.x, -clickPoint.y, 0]);
-    device.queue.writeBuffer(idMVPUniform, 0, MVP);
+    device.queue.writeBuffer(idMVPUniform, 0, viewProjection);
 
     // id를 uniform buffer로 하지 말고 vertex attribute로 만들기
     device.queue.writeBuffer(pickVertexBuffer, 0, control_points);
@@ -584,7 +583,7 @@ async function main() {
 
     const idMVPUniform = device.createBuffer({
         label: 'picking MVP uniform buffer',
-        size: 4 * 4 * 4,
+        size: mvpSize,  // 4x4 matrix
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     })
 
@@ -648,7 +647,7 @@ async function main() {
 
         // SelectControlPoint() is in range (1 ~ idLength) or 0. so it should subtract 1;
         selectedPointIndex = await SelectControlPoint(device, idRenderPipeline, pickVertexBuffer, idVertexBuffer,
-           idRenderTexture, bufferPicking, bindGroupPick, idMVPUniform, idReadBuffer, cpsTypedArray, idTypedArray, clickPos);
+           idRenderTexture, bufferPicking, bindGroupPick, idMVPUniform, idReadBuffer, cpsTypedArray, idTypedArray, clickPos, viewProjection);
         selectedPointIndex--;
 
         canvas.addEventListener('mousemove', HandleMouseMove);
@@ -668,6 +667,7 @@ async function main() {
                 mouseDy = dragEnd.y - dragStart.y;
                 dragStart = dragEnd;
 
+                // 여기 고쳐야 함.
                 cpsTypedArray[selectedPointIndex * 2 + 0] += mouseDx;
                 cpsTypedArray[selectedPointIndex * 2 + 1] += mouseDy;
             }

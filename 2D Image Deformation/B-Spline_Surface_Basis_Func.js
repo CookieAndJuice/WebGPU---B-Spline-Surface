@@ -7,8 +7,8 @@ import { controlPointsFragmentShaderSrc } from './WGSL_Ctrl_Points_VS_FS.js';
 import *as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { vec2, vec3, vec4, mat3, utils } from 'wgpu-matrix';
-import objectVertices from './Image/vertices.json' with {type: "json"};
-import objectColors from './Image/colors.json' with {type: "json"};
+import jsonObjectLG from './Image/triangulated_pingu_with_linearGradient.json' with {type: "json"};
+import jsonObject from './Image/triangulated_pingu_without_linearGradient.json' with {type: "json"};
 
 function findInterval(knotList, point) {
     let returnIndex = 0;
@@ -151,20 +151,7 @@ async function main() {
         const blob = await res.blob();
         return await createImageBitmap(blob, { colorSpaceConversion: 'none' });
     }
-    
-    // load model file
-    const ModelObject = await load_gltf('Image/3dpea.com_triangulated-image.glb');
-    console.log(ModelObject);
-    
-    // image
-    const pinguImageUrl = './Image/pingu.jpg';
-    const pinguImage = await loadImageBitmap(pinguImageUrl);
-    const imageWidth = pinguImage.width;
-    const imageHeight = pinguImage.height;
-    console.log(imageWidth, imageHeight);
-    console.log(objectVertices);
-    console.log(objectColors);
-    
+
     // TypedArrays
     // control points - positions in NDC for 2d
     const controlPointUnitSize = 2 * 4;         // vec2<f32>
@@ -194,34 +181,61 @@ async function main() {
         knotArray[i] = i;
     }
 
+    //---------------------------------------------------------------------------------------------------------
+    
+    // fetch image(with linear gradient) json object
+    const imageWidth = jsonObjectLG.imageSize[0];
+    const imageHeight = jsonObjectLG.imageSize[1];
+
+    const linearGradients = jsonObjectLG.linearGradients;
+    const vertices = jsonObjectLG.polygons.vertices;
+    const indices = jsonObjectLG.polygons.indices;
+    const colorIndices = jsonObjectLG.polygons.colorIndices;
+    console.log('linearGradients', linearGradients);
+    console.log('vertices', vertices);
+    console.log('indices', indices);
+    console.log('colorIndices', colorIndices);
+    const indicesTypedArray = new Uint32Array(indices.flat());
+
+    // fetch colors of image(without linear gradient) json object
+    const nlgColors = jsonObject.polygons.colors;
+    console.log('colors', nlgColors.length);
+    
     // calculate domain knots
     const start = degree - 1;                       // domain start point
     const end = knotArray.length - degree;          // domain end point
     const domainNum = end - start + 1;              // domain knots number
 
     // draw points
-    const triangleNum = objectVertices.length;
-    const drawPointsNum = triangleNum * 3;
+    const drawPointsNum = vertices.length;
     const drawPointsArray = [];
-    for (let i = 0; i < triangleNum; i++) {
-        for (let j = 0; j < 3; j++) {
-            drawPointsArray.push([Number(objectVertices[i][j][0] / imageWidth) * (domainNum - 1) + start,
-                                (Number(objectVertices[i][j][1] / imageHeight * 2 - 1) * (-1) + 1) / 2 * (domainNum - 1) + start]); // flip y
-        }
+    for (let i = 0; i < drawPointsNum; i++) {
+        drawPointsArray.push([Number(vertices[i][0] / imageWidth) * (domainNum - 1) + start,
+                            Number(vertices[i][1] / imageHeight) * (domainNum - 1) + start]); // flip y
+                            // (Number(vertices[i][1] / imageHeight * 2 - 1) * (-1) + 1) / 2 * (domainNum - 1) + start]); // flip y
     }
     const drawPointsTypedArray = new Float32Array(drawPointsArray.flat());
     console.log('drawPointsArray', drawPointsArray);
     console.log('drawPointsNum', drawPointsNum);
     
     // colors
-    const colorTriangleNum = objectColors.length;
+    // linear gradient colors
+    const colorTriangleNum = colorIndices.length;
     const colorCoordsArray = [];
-    for (let i = 0; i < colorTriangleNum; i++) {
-        for (let j = 0; j < 3; j++) {
-            colorCoordsArray.push([objectColors[i][j][0], objectColors[i][j][1], objectColors[i][j][2], 1]);
-        }
+    // for (let i = 0; i < colorTriangleNum; i++) {
+    //     for (let j = 0; j < 3; j++) {
+    //         colorCoordsArray.push([objectColors[i][j][0], objectColors[i][j][1], objectColors[i][j][2], 1]);
+    //     }
+    // }
+    // const colorsTypedArray = new Float32Array(colorCoordsArray.flat());
+    
+    // without linear gradient colors
+    const nlgColorTriangleNum = nlgColors.length;
+    const nlgColorCoordsArray = [];
+    for (let i = 0; i < nlgColorTriangleNum; i++) {
+        nlgColorCoordsArray.push([nlgColors[i][0] / 256, nlgColors[i][1] / 256, nlgColors[i][2] / 256, 1]);
     }
-    const colorsTypedArray = new Float32Array(colorCoordsArray.flat());
+    const nlgColorsTypedArray = new Float32Array(nlgColorCoordsArray.flat());
 
     // intervals
     const intervalArray = [];
@@ -440,12 +454,19 @@ async function main() {
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
     
+    const indexBuffer = device.createBuffer({
+        label: 'index buffer',
+        size: indicesTypedArray.byteLength,
+        usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(indexBuffer, 0, indicesTypedArray);
+    
     const vertexColorBuffer = device.createBuffer({
         label: 'vertex buffer',
-        size: colorsTypedArray.byteLength,
+        size: nlgColorsTypedArray.byteLength,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
-    device.queue.writeBuffer(vertexColorBuffer, 0, colorsTypedArray);
+    device.queue.writeBuffer(vertexColorBuffer, 0, nlgColorsTypedArray);
     
     const vertexControlPointsBuffer = device.createBuffer({
         label: 'control points vertex buffer',
@@ -608,7 +629,8 @@ async function main() {
             renderPass.setPipeline(renderPipeline);
             renderPass.setVertexBuffer(0, vertexPointBuffer);
             renderPass.setVertexBuffer(1, vertexColorBuffer);
-            renderPass.draw(drawPointsNum);
+            renderPass.setIndexBuffer(indexBuffer, 'uint32');
+            renderPass.drawIndexed(indices.length);
             
             // draw control points
             renderPass.setPipeline(controlPointsPipeline);
