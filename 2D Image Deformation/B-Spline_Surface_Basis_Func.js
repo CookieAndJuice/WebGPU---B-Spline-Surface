@@ -211,7 +211,7 @@ async function main() {
     const drawPointsArray = [];
     for (let i = 0; i < drawPointsNum; i++) {
         drawPointsArray.push([Number(vertices[i][0] / imageWidth) * (domainNum - 1) + start,
-                            Number(vertices[i][1] / imageHeight) * (domainNum - 1) + start]); // flip y
+                            Number(vertices[i][1] / imageHeight) * (domainNum - 1) + start]);
                             // (Number(vertices[i][1] / imageHeight * 2 - 1) * (-1) + 1) / 2 * (domainNum - 1) + start]); // flip y
     }
     const drawPointsTypedArray = new Float32Array(drawPointsArray.flat());
