@@ -104,7 +104,13 @@ async function SelectControlPoint(device, pipelineId, pickVertexBuffer, idVertex
     // control_points: canvas size
     // clickPoint: canvas size
     // need to make MVP
-
+    
+    // clickPos만큼 texture를 이동시켜야 하는데, 3D 공간이 되니 어떻게 해야할 지 모르겠다.
+    let MVP = mat4.clone(viewProjection);
+    // MVP = mat4.multiply()
+    // MVP = mat3.fromTranslation(MVP, [clickPoint.x, clickPoint.y]);
+    
+    // let viewProjection = mat4.multiply(projection, view)
     device.queue.writeBuffer(idMVPUniform, 0, viewProjection);
 
     // id를 uniform buffer로 하지 말고 vertex attribute로 만들기
@@ -325,7 +331,7 @@ async function main() {
             module: vertexShaderModule,
             buffers: [
                 {
-                    arrayStride: 4 * 4, // 4 floats, 4 bytes each
+                    arrayStride: 4 * 4, // 3 floats, 1 padding, 4 bytes each
                     stepMode: 'vertex',
                     attributes: [
                         { shaderLocation: 0, offset: 0, format: 'float32x4' },  // position
@@ -607,8 +613,9 @@ async function main() {
         ],
     });
     
-    // canvas mouse drag values
+    // canvas mouse drag & altkey down values
     let drag = false;
+    let altDown = false;
     let clickPos = { x: -100, y: -100 };
     let dragStart = { x: -100, y: -100 };
     let dragEnd = { x: -100, y: -100 };
@@ -616,16 +623,16 @@ async function main() {
     let mouseDy = 0;
     let selectedPointIndex = -1;
 
-    // canvas mouse event
+    // canvas event
+    // you can click the control points and drag to move them.
+    // - if you press alt key, you can move camera.
+    
+    // mouse down(altkey down), drag, up
     canvas.addEventListener('mousedown', async function (event) {
         clickPos = {
             x: event.clientX / canvas.width * 2 - 1,
             y: -(event.clientY / canvas.height * 2 - 1)
         }
-        // clickPos = {
-        //     x: event.clientX,
-        //     y: event.clientY
-        // }
         dragStart = {
             x: event.clientX / canvas.width * 2 - 1,
             y: -(event.clientY / canvas.height * 2 - 1)
@@ -637,14 +644,20 @@ async function main() {
 
         console.log(`clickPos: ${clickPos.x}, ${clickPos.y}`);
 
+        drag = true;
+        if (event.altKey)
+        {
+            console.log('alt key is down');
+            altDown = true;
+        }
+        
+        // get selected control point index
         const idRenderTexture = device.createTexture({
             size: [1, 1],
             format: 'r8unorm',
             usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
         });
-
-        drag = true;
-
+        
         // SelectControlPoint() is in range (1 ~ idLength) or 0. so it should subtract 1;
         selectedPointIndex = await SelectControlPoint(device, idRenderPipeline, pickVertexBuffer, idVertexBuffer,
            idRenderTexture, bufferPicking, bindGroupPick, idMVPUniform, idReadBuffer, cpsTypedArray, idTypedArray, clickPos, viewProjection);
@@ -656,33 +669,36 @@ async function main() {
 
     function HandleMouseMove(event) {
         if (drag) {
-            // control poitns move code
-            if (selectedPointIndex !== -1) {
-                dragEnd = {
-                    x: event.clientX / canvas.width * 2 - 1,
-                    y: -(event.clientY / canvas.height * 2 - 1)
+            if (altDown) {
+                // camera move code
+                let offset = [event.movementX, event.movementY];
+                if (offset[0] != 0 || offset[1] != 0) // For some reason, the offset becomes zero sometimes...
+                {
+                    viewProjection = mat4.clone(projection);
+                    viewProjection = mat4.multiply(viewProjection, view);
+                    let axis = unproject_vector([offset[1], offset[0], 0], viewProjection,
+                        [0, 0, canvas.clientWidth, canvas.clientHeight]);
+                    view = mat4.rotate(view, [axis[0], axis[1], axis[2]], utils.degToRad(length2(offset)));
                 }
-
-                mouseDx = dragEnd.x - dragStart.x;
-                mouseDy = dragEnd.y - dragStart.y;
-                dragStart = dragEnd;
-
-                // 여기 고쳐야 함.
-                cpsTypedArray[selectedPointIndex * 2 + 0] += mouseDx;
-                cpsTypedArray[selectedPointIndex * 2 + 1] += mouseDy;
+                viewProjection = mat4.multiply(projection, view);
             }
-            
-            // camera move code
-            let offset = [event.movementX, event.movementY];
-            if (offset[0] != 0 || offset[1] != 0) // For some reason, the offset becomes zero sometimes...
-            {
-                viewProjection = mat4.clone(projection);
-                viewProjection = mat4.multiply(viewProjection, view);
-                let axis = unproject_vector([offset[1], offset[0], 0], viewProjection,
-                    [0, 0, canvas.clientWidth, canvas.clientHeight]);
-                view = mat4.rotate(view, [axis[0], axis[1], axis[2]], utils.degToRad(length2(offset)));
+            else {
+                // control points move code
+                if (selectedPointIndex !== -1) {
+                    dragEnd = {
+                        x: event.clientX / canvas.width * 2 - 1,
+                        y: -(event.clientY / canvas.height * 2 - 1)
+                    }
+
+                    mouseDx = dragEnd.x - dragStart.x;
+                    mouseDy = dragEnd.y - dragStart.y;
+                    dragStart = dragEnd;
+
+                    // now cps moved in 2d, but need to convert to 3d
+                    cpsTypedArray[selectedPointIndex * 2 + 0] += mouseDx;
+                    cpsTypedArray[selectedPointIndex * 2 + 1] += mouseDy;
+                }
             }
-            viewProjection = mat4.multiply(projection, view);
         }
     }
 
@@ -699,6 +715,7 @@ async function main() {
             mouseDx = 0;
             mouseDy = 0;
             drag = false;
+            altDown = false;
             selectedPointIndex = -1;
 
             canvas.removeEventListener('mousemove', HandleMouseMove);
