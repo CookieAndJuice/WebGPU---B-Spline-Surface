@@ -35,6 +35,12 @@ async function load_gltf(url) {
     return root.scene.children[0];
 }
 
+async function loadImageBitmap(url) {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    return await createImageBitmap(blob, { colorSpaceConversion: 'none' });
+}
+
 async function SelectControlPoint(device, pipelineId, pickVertexBuffer, idVertexBuffer, idRenderTexture,
     bufferPicking, bindGroupPick, idMVPUniform, idReadBuffer, control_points, idTypedArray, clickPoint)
 {
@@ -190,16 +196,14 @@ async function main() {
     const linearGradients = jsonObjectLG.linearGradients;
     const vertices = jsonObjectLG.polygons.vertices;
     const indices = jsonObjectLG.polygons.indices;
-    const colorIndices = jsonObjectLG.polygons.colorIndices;
     console.log('linearGradients', linearGradients);
     console.log('vertices', vertices);
     console.log('indices', indices);
-    console.log('colorIndices', colorIndices);
     const indicesTypedArray = new Uint32Array(indices.flat());
-
-    // fetch colors of image(without linear gradient) json object
-    const nlgColors = jsonObject.polygons.colors;
-    console.log('colors', nlgColors.length);
+    
+    // fetch image as a texture
+    const url = './Image/triangulated-image_gradient.png';
+    const source = await loadImageBitmap(url);
     
     // calculate domain knots
     const start = degree - 1;                       // domain start point
@@ -217,24 +221,17 @@ async function main() {
     console.log('drawPointsArray', drawPointsArray);
     console.log('drawPointsNum', drawPointsNum);
     
-    // colors
-    // linear gradient colors
-    const colorTriangleNum = colorIndices.length;
-    const colorCoordsArray = [];
-    // for (let i = 0; i < colorTriangleNum; i++) {
-    //     for (let j = 0; j < 3; j++) {
-    //         colorCoordsArray.push([objectColors[i][j][0], objectColors[i][j][1], objectColors[i][j][2], 1]);
-    //     }
-    // }
-    // const colorsTypedArray = new Float32Array(colorCoordsArray.flat());
-    
-    // without linear gradient colors
-    const nlgColorTriangleNum = nlgColors.length;
-    const nlgColorCoordsArray = [];
-    for (let i = 0; i < nlgColorTriangleNum; i++) {
-        nlgColorCoordsArray.push([nlgColors[i][0] / 256, nlgColors[i][1] / 256, nlgColors[i][2] / 256, 1]);
-    }
-    const nlgColorsTypedArray = new Float32Array(nlgColorCoordsArray.flat());
+    // texture coordinates
+    // texture coordinates are normalized to [0, 1] range
+    const textureCoordsTypedArray = new Float32Array(vertices.flat().map((v, i) => {
+        if (i % 2 === 0) {
+            // u coordinate
+            return v / imageWidth;
+        } else {
+            // v coordinate, flip y
+            return 1.0 - v / imageHeight;
+        }
+    }));
 
     // intervals
     const intervalArray = [];
@@ -304,12 +301,12 @@ async function main() {
                     ],
                 },
                 {
-                    arrayStride: 4 * 4, // 4 floats, 4 bytes each
+                    arrayStride: 2 * 4, // 2 floats, 4bytes each
                     stepMode: 'vertex',
                     attributes: [
-                        { shaderLocation: 1, offset: 0, format: 'float32x4' },  // color
-                    ],
-                },
+                        { shaderLocation: 1, offset: 0, format: 'float32x2' },    // texCoord
+                    ]
+                }
             ],
         },
         fragment: {
@@ -460,17 +457,42 @@ async function main() {
     });
     device.queue.writeBuffer(indexBuffer, 0, indicesTypedArray);
     
-    const vertexColorBuffer = device.createBuffer({
-        label: 'vertex buffer',
-        size: nlgColorsTypedArray.byteLength,
+    const textureCoordsBuffer = device.createBuffer({
+        label: 'texture coords vertex buffer',
+        size: textureCoordsTypedArray.byteLength,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
-    device.queue.writeBuffer(vertexColorBuffer, 0, nlgColorsTypedArray);
+    device.queue.writeBuffer(textureCoordsBuffer, 0, textureCoordsTypedArray);
     
     const vertexControlPointsBuffer = device.createBuffer({
         label: 'control points vertex buffer',
         size: cpsTypedArray.byteLength,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+    
+    // texture
+    const texture = device.createTexture({
+        label: url,
+        format: 'rgba8unorm',
+        size: [source.width, source.height],
+        usage: GPUTextureUsage.TEXTURE_BINDING |
+            GPUTextureUsage.COPY_DST |
+            GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    device.queue.copyExternalImageToTexture(
+        { source, flipY: true },
+        { texture },
+        { width: source.width, height: source.height },
+    );
+    
+    const sampler = device.createSampler();
+    const textureBindGroup = device.createBindGroup({
+        label: 'texture bind group',
+        layout: renderPipeline.getBindGroupLayout(0),
+        entries: [
+            { binding: 0, resource: sampler },
+            { binding: 1, resource: texture.createView() },
+        ],
     });
     
     // picking Id buffer
@@ -530,10 +552,6 @@ async function main() {
             x: event.clientX / canvas.width * 2 - 1,
             y: -(event.clientY / canvas.height * 2 - 1)
         }
-        // clickPos = {
-        //     x: event.clientX,
-        //     y: event.clientY
-        // }
         dragStart = {
             x: event.clientX / canvas.width * 2 - 1,
             y: -(event.clientY / canvas.height * 2 - 1)
@@ -627,8 +645,9 @@ async function main() {
             // draw image
             renderPass.setPipeline(renderPipeline);
             renderPass.setVertexBuffer(0, vertexPointBuffer);
-            renderPass.setVertexBuffer(1, vertexColorBuffer);
+            renderPass.setVertexBuffer(1, textureCoordsBuffer);
             renderPass.setIndexBuffer(indexBuffer, 'uint32');
+            renderPass.setBindGroup(0, textureBindGroup);
             renderPass.drawIndexed(indices.length);
             
             // draw control points

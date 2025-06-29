@@ -4,12 +4,12 @@ export function vertexShaderSrc()
     return /*wgsl*/`
         struct Vertices {
             @location(0) position: vec2f,
-            @location(1) color: vec4f,
+            @location(1) texCoord: vec2f,
         };
 
         struct VSOutput {
             @builtin(position) position: vec4f,
-            @location(0) color: vec4f,
+            @location(0) texCoord: vec2f,
         };
 
         @vertex fn vs(
@@ -19,8 +19,8 @@ export function vertexShaderSrc()
             var vsOut: VSOutput;
 
             vsOut.position = vec4f(vertex.position, 0, 1);
-            vsOut.color = vertex.color;
-            
+            vsOut.texCoord = vertex.texCoord;
+
             return vsOut;
         }
     `;
@@ -31,7 +31,7 @@ export function fragmentShaderSrc()
     return /*wgsl*/`
         struct FSInput {
             @builtin(position) position: vec4f,
-            @location(0) color: vec4f,
+            @location(0) texCoord: vec2f,
         };
 
         @group(0) @binding(0) var ourSampler: sampler;
@@ -39,7 +39,7 @@ export function fragmentShaderSrc()
 
         @fragment fn fs(fsIn: FSInput) -> @location(0) vec4f
         {
-            return fsIn.color;
+            return textureSample(ourTexture, ourSampler, fsIn.texCoord);
         }
     `;
 }
