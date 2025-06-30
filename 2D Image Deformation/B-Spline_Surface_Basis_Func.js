@@ -193,10 +193,8 @@ async function main() {
     const imageWidth = jsonObjectLG.imageSize[0];
     const imageHeight = jsonObjectLG.imageSize[1];
 
-    const linearGradients = jsonObjectLG.linearGradients;
     const vertices = jsonObjectLG.polygons.vertices;
     const indices = jsonObjectLG.polygons.indices;
-    console.log('linearGradients', linearGradients);
     console.log('vertices', vertices);
     console.log('indices', indices);
     const indicesTypedArray = new Uint32Array(indices.flat());
@@ -215,7 +213,7 @@ async function main() {
     const drawPointsArray = [];
     for (let i = 0; i < drawPointsNum; i++) {
         drawPointsArray.push([Number(vertices[i][0] / imageWidth) * (domainNum - 1) + start,
-                            (Number(vertices[i][1] / imageHeight * 2 - 1) * (-1) + 1) / 2 * (domainNum - 1) + start]); // flip y
+                            Number(vertices[i][1] / imageHeight) * (domainNum - 1) + start]);
     }
     const drawPointsTypedArray = new Float32Array(drawPointsArray.flat());
     console.log('drawPointsArray', drawPointsArray);
@@ -228,8 +226,8 @@ async function main() {
             // u coordinate
             return v / imageWidth;
         } else {
-            // v coordinate, flip y
-            return 1.0 - v / imageHeight;
+            // v coordinate
+            return v / imageHeight;
         }
     }));
 
